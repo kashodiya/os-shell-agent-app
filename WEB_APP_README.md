@@ -1,3 +1,4 @@
+
 # OS Shell Agent Web Application
 
 This web application provides a chat interface to interact with the OS Shell Agent.
@@ -9,6 +10,8 @@ This web application provides a chat interface to interact with the OS Shell Age
 - Markdown rendering of responses
 - Dark/Light theme toggle
 - Mobile-responsive design
+- File operations (read, write, append)
+- Advanced shell command execution
 
 ## How to Run
 
@@ -29,10 +32,36 @@ This web application provides a chat interface to interact with the OS Shell Age
 
 ## Usage
 
-- Type a message to get general information about the shell agent
-- To execute a shell command, prefix your message with `!` followed by the command
-  - Example: `!ls -la` or `!echo 'Hello World'`
-- The response will be displayed in real-time with proper formatting
+### Shell Commands
+Start your message with `!` followed by the shell command:
+```
+!ls -la
+!echo "Hello World"
+!python -c "print('Hello from Python')"
+```
+
+### File Operations
+Read a file:
+```
+read:/path/to/file.txt
+```
+
+Write to a file (overwrites existing content):
+```
+write:/path/to/file.txt:Content to write
+```
+
+Append to a file:
+```
+append:/path/to/file.txt:Content to append
+```
+
+### Examples
+- `!ls -la` - List all files in the current directory
+- `!cat app.py` - Display the content of app.py
+- `read:app.py` - Read the content of app.py with syntax highlighting
+- `write:test.txt:Hello World` - Create or overwrite test.txt with "Hello World"
+- `append:log.txt:New log entry` - Append "New log entry" to log.txt
 
 ## Technical Details
 
@@ -41,6 +70,8 @@ This web application provides a chat interface to interact with the OS Shell Age
 - FastAPI web server with WebSocket support
 - Asynchronous command execution
 - Streaming responses
+- Simplified Advanced Shell Agent implementation
+- Per-client agent instances
 
 ### Frontend
 
@@ -54,18 +85,20 @@ This web application provides a chat interface to interact with the OS Shell Age
 
 ## Architecture
 
-The application follows a simple client-server architecture:
+The application follows a client-server architecture:
 
 1. Client sends messages via WebSocket
-2. Server processes messages and executes shell commands
-3. Server streams responses back to the client
-4. Client renders the responses in real-time
+2. Server routes messages to the client's dedicated agent instance
+3. Agent processes messages and executes commands or file operations
+4. Server streams responses back to the client
+5. Client renders the responses in real-time with Markdown formatting
 
 ## Security Considerations
 
 - The application executes shell commands directly, which can be a security risk
 - In a production environment, you should implement proper authentication and authorization
 - Consider adding command validation and restrictions
+- File operations should be restricted to specific directories
 
 ## Future Improvements
 
@@ -74,3 +107,5 @@ The application follows a simple client-server architecture:
 - Command history
 - Session persistence
 - More advanced UI features
+- Task planning and execution
+- Integration with external APIs
