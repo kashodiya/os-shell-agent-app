@@ -1,3 +1,6 @@
-trands-agents
+strands-agents
 click
 boto3
+fastapi
+uvicorn
+websockets

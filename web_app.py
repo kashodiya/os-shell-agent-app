@@ -96,6 +96,10 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 await handle_chat_message(message, client_id)
             elif message["type"] == "command":
                 await handle_command_message(message, client_id)
+            elif message["type"] == "toggle_safety_mode":
+                await handle_safety_toggle(message, client_id)
+            elif message["type"] == "get_safety_status":
+                await handle_safety_status(message, client_id)
             elif message["type"] == "ping":
                 await manager.send_message({"type": "pong"}, client_id)
                 
@@ -224,6 +228,99 @@ async def handle_command_message(message: dict, client_id: str):
             "message": f"Internal error: {str(e)}"
         }, client_id)
 
+async def handle_safety_toggle(message: dict, client_id: str):
+    """Handle safety mode toggle requests"""
+    try:
+        enable_safe_mode = message.get("enable_safe_mode", None)
+        message_id = message.get("message_id", "")
+        
+        # Get the agent for this client
+        agent = manager.agents.get(client_id)
+        if not agent:
+            await manager.send_message({
+                "type": "error",
+                "message": "Agent not initialized"
+            }, client_id)
+            return
+        
+        # Send acknowledgment
+        await manager.send_message({
+            "type": "safety_toggle_received",
+            "message_id": message_id
+        }, client_id)
+        
+        # Toggle safety mode
+        try:
+            result = agent.toggle_safety_mode(enable_safe_mode)
+            
+            # Send the response back to the client
+            await manager.send_message({
+                "type": "safety_toggle_response",
+                "message_id": message_id,
+                "safe_mode": result["safe_mode"],
+                "message": result["message"],
+                "warning": result.get("warning"),
+                "success": True
+            }, client_id)
+            
+        except Exception as e:
+            logger.error(f"Error toggling safety mode: {e}")
+            await manager.send_message({
+                "type": "error",
+                "message_id": message_id,
+                "message": f"Error toggling safety mode: {str(e)}"
+            }, client_id)
+        
+    except Exception as e:
+        logger.error(f"Error in handle_safety_toggle: {e}")
+        await manager.send_message({
+            "type": "error",
+            "message": f"Internal error: {str(e)}"
+        }, client_id)
+
+async def handle_safety_status(message: dict, client_id: str):
+    """Handle safety status requests"""
+    try:
+        message_id = message.get("message_id", "")
+        
+        # Get the agent for this client
+        agent = manager.agents.get(client_id)
+        if not agent:
+            await manager.send_message({
+                "type": "error",
+                "message": "Agent not initialized"
+            }, client_id)
+            return
+        
+        # Get safety status
+        try:
+            status = agent.get_safety_status()
+            
+            # Send the response back to the client
+            await manager.send_message({
+                "type": "safety_status_response",
+                "message_id": message_id,
+                "safe_mode": status["safe_mode"],
+                "status": status["status"],
+                "description": status["description"],
+                "success": True
+            }, client_id)
+            
+        except Exception as e:
+            logger.error(f"Error getting safety status: {e}")
+            await manager.send_message({
+                "type": "error",
+                "message_id": message_id,
+                "message": f"Error getting safety status: {str(e)}"
+            }, client_id)
+        
+    except Exception as e:
+        logger.error(f"Error in handle_safety_status: {e}")
+        await manager.send_message({
+            "type": "error",
+            "message": f"Internal error: {str(e)}"
+        }, client_id)
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
@@ -231,7 +328,7 @@ async def health_check():
 
 if __name__ == "__main__":
     # Use the port specified in the runtime information
-    port = 50598  # First available port from runtime info
+    port = 52458  # First available port from runtime info
     uvicorn.run(
         app, 
         host="0.0.0.0", 

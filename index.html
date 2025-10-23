@@ -120,6 +120,26 @@
             background-color: transparent;
             padding: 0;
         }
+        
+        .risky-mode-banner {
+            background: linear-gradient(45deg, #ff5722, #ff9800);
+            color: white;
+            animation: pulse-warning 2s infinite;
+        }
+        
+        @keyframes pulse-warning {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+        
+        .safety-toggle-switch .v-switch__thumb {
+            transition: all 0.3s ease;
+        }
+        
+        .confirmation-dialog .v-card-title {
+            background-color: #ff5722 !important;
+            color: white !important;
+        }
     </style>
 </head>
 <body>
@@ -442,6 +462,28 @@
                             <v-icon class="mr-2">mdi-chat</v-icon>
                             Chat with OS Shell Agent
                             <v-spacer></v-spacer>
+                            
+                            <!-- Safety Mode Toggle -->
+                            <div class="d-flex align-center mr-4">
+                                <v-icon 
+                                    :color="safetyMode ? 'success' : 'warning'" 
+                                    class="mr-2"
+                                >
+                                    {{ safetyMode ? 'mdi-shield-check' : 'mdi-alert-circle' }}
+                                </v-icon>
+                                <span class="text-body-2 mr-2">
+                                    {{ safetyMode ? 'Safe Mode' : 'Risky Mode' }}
+                                </span>
+                                <v-switch
+                                    v-model="toggleValue"
+                                    @change="toggleSafetyMode"
+                                    :disabled="!isConnected"
+                                    color="success"
+                                    hide-details
+                                    density="compact"
+                                ></v-switch>
+                            </div>
+                            
                             <v-btn 
                                 icon 
                                 variant="text" 
@@ -451,6 +493,20 @@
                                 <v-icon>mdi-delete-sweep</v-icon>
                             </v-btn>
                         </v-card-title>
+                        
+                        <!-- Risky Mode Warning Banner -->
+                        <v-alert
+                            v-if="!safetyMode"
+                            type="warning"
+                            class="risky-mode-banner ma-0"
+                            density="compact"
+                            border="start"
+                        >
+                            <template v-slot:prepend>
+                                <v-icon>mdi-alert-circle</v-icon>
+                            </template>
+                            <strong>⚠️ RISKY MODE ENABLED</strong> - Dangerous commands will not be blocked! Use with extreme caution.
+                        </v-alert>
                         
                         <!-- Chat Messages -->
                         <v-card-text 
@@ -620,6 +676,54 @@
                     </v-card>
                 </v-col>
             </v-row>
+            
+            <!-- Risky Mode Confirmation Dialog -->
+            <v-dialog v-model="showRiskyModeDialog" max-width="500" persistent>
+                <v-card class="confirmation-dialog">
+                    <v-card-title class="bg-error text-white">
+                        <v-icon class="mr-2">mdi-alert-circle</v-icon>
+                        Enable Risky Mode?
+                    </v-card-title>
+                    <v-card-text class="pa-6">
+                        <v-alert type="warning" class="mb-4">
+                            <v-icon slot="prepend">mdi-alert-triangle</v-icon>
+                            <strong>WARNING:</strong> Enabling risky mode will disable safety checks and allow potentially dangerous commands to execute without confirmation.
+                        </v-alert>
+                        
+                        <p class="text-body-1 mb-3">
+                            <strong>Risks include:</strong>
+                        </p>
+                        <ul class="text-body-2 mb-4">
+                            <li>File deletion and system modification</li>
+                            <li>Network configuration changes</li>
+                            <li>Service and process manipulation</li>
+                            <li>Registry and system settings changes</li>
+                        </ul>
+                        
+                        <p class="text-body-2">
+                            Only enable risky mode if you understand the consequences and trust the commands you will be executing.
+                        </p>
+                    </v-card-text>
+                    <v-card-actions class="pa-4">
+                        <v-btn 
+                            color="grey" 
+                            variant="outlined"
+                            @click="cancelRiskyMode"
+                        >
+                            Cancel
+                        </v-btn>
+                        <v-spacer></v-spacer>
+                        <v-btn 
+                            color="error" 
+                            variant="flat"
+                            @click="confirmRiskyMode"
+                        >
+                            <v-icon class="mr-2">mdi-alert-circle</v-icon>
+                            Enable Risky Mode
+                        </v-btn>
+                    </v-card-actions>
+                </v-card>
+            </v-dialog>
         </v-container>
     </script>
 
@@ -672,6 +776,10 @@
                 const ws = ref(null);
                 const clientId = ref(Math.random().toString(36).substr(2, 9));
                 const chatContainer = ref(null);
+                const safetyMode = ref(true);
+                const showRiskyModeDialog = ref(false);
+                const pendingSafetyToggle = ref(false);
+                const toggleValue = ref(true);
 
                 const sendMessage = () => {
                     if (!newMessage.value.trim() || !isConnected.value || isTyping.value) return;
@@ -707,6 +815,67 @@
                     messages.value = [];
                 };
 
+                const toggleSafetyMode = () => {
+                    console.log('toggleSafetyMode called');
+                    console.log('isConnected:', isConnected.value);
+                    console.log('toggleValue:', toggleValue.value);
+                    console.log('safetyMode:', safetyMode.value);
+                    
+                    if (!isConnected.value) {
+                        console.log('Not connected, reverting toggle');
+                        toggleValue.value = safetyMode.value; // Revert toggle if not connected
+                        return;
+                    }
+                    
+                    // If trying to disable safety mode (toggle switched to false), show confirmation dialog
+                    if (toggleValue.value === false) {
+                        console.log('Showing risky mode dialog');
+                        showRiskyModeDialog.value = true;
+                        pendingSafetyToggle.value = true;
+                        // Don't send the toggle yet - wait for confirmation
+                    } else if (toggleValue.value === true) {
+                        console.log('Enabling safety mode');
+                        // Enabling safety mode - no confirmation needed
+                        sendSafetyToggle(true);
+                    }
+                };
+
+                const confirmRiskyMode = () => {
+                    showRiskyModeDialog.value = false;
+                    pendingSafetyToggle.value = false;
+                    sendSafetyToggle(false);
+                };
+
+                const cancelRiskyMode = () => {
+                    showRiskyModeDialog.value = false;
+                    pendingSafetyToggle.value = false;
+                    // Revert the toggle back to safe mode
+                    toggleValue.value = true;
+                };
+
+                const sendSafetyToggle = (enableSafeMode) => {
+                    if (!isConnected.value) return;
+
+                    const messageId = Date.now().toString();
+                    
+                    ws.value.send(JSON.stringify({
+                        type: 'toggle_safety_mode',
+                        enable_safe_mode: enableSafeMode,
+                        message_id: messageId
+                    }));
+                };
+
+                const getSafetyStatus = () => {
+                    if (!isConnected.value) return;
+
+                    const messageId = Date.now().toString();
+                    
+                    ws.value.send(JSON.stringify({
+                        type: 'get_safety_status',
+                        message_id: messageId
+                    }));
+                };
+
                 const renderMarkdown = (text) => {
                     if (typeof marked !== 'undefined') {
                         return marked.parse(text);
@@ -731,6 +900,8 @@
                     ws.value.onopen = () => {
                         console.log('WebSocket connected');
                         isConnected.value = true;
+                        // Get initial safety status
+                        setTimeout(() => getSafetyStatus(), 100);
                     };
 
                     ws.value.onmessage = (event) => {
@@ -769,6 +940,29 @@
 
                             case 'typing_stop':
                                 isTyping.value = false;
+                                break;
+
+                            case 'safety_toggle_response':
+                                safetyMode.value = data.safe_mode;
+                                toggleValue.value = data.safe_mode;
+                                
+                                // Show success message
+                                messages.value.push({
+                                    id: Date.now().toString(),
+                                    type: 'agent',
+                                    content: `✅ ${data.message}${data.warning ? '\n\n' + data.warning : ''}`,
+                                    timestamp: new Date()
+                                });
+                                scrollToBottom();
+                                break;
+
+                            case 'safety_status_response':
+                                safetyMode.value = data.safe_mode;
+                                toggleValue.value = data.safe_mode;
+                                break;
+
+                            case 'safety_toggle_received':
+                                // Acknowledgment received
                                 break;
                         }
                     };
@@ -809,9 +1003,15 @@
                     isTyping,
                     isConnected,
                     chatContainer,
+                    safetyMode,
+                    toggleValue,
+                    showRiskyModeDialog,
                     sendMessage,
                     sendSampleMessage,
                     clearChat,
+                    toggleSafetyMode,
+                    confirmRiskyMode,
+                    cancelRiskyMode,
                     renderMarkdown
                 };
             }

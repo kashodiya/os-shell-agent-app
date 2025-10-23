@@ -6,6 +6,7 @@ A modern web-based chat interface for interacting with an AI-powered OS Shell Ag
 
 - **Real-time Chat Interface**: WebSocket-powered communication for instant responses
 - **AI-Powered Shell Agent**: Intelligent agent using Strands Agents framework
+- **Safety Mode Toggle**: User-controlled risky mode for potentially dangerous operations
 - **Modern UI**: Built with Vue.js 3, Vuetify 3, and Vue Router
 - **Single Page Application**: Complete frontend contained in one HTML file
 - **Markdown Support**: Rich text rendering with syntax highlighting
@@ -13,6 +14,7 @@ A modern web-based chat interface for interacting with an AI-powered OS Shell Ag
 - **Expandable Output**: Detailed command output with collapsible sections
 - **Responsive Design**: Works on desktop and mobile devices
 - **Connection Status**: Real-time WebSocket connection indicator
+- **Safety Guardrails**: Built-in protection against dangerous commands
 
 ## 🛠️ Technology Stack
 
@@ -88,12 +90,15 @@ os-shell-agent-app/
 ### Chat Interface
 
 1. **Navigate to Chat**: Click the "CHAT" button in the navigation bar
-2. **Send Messages**: Type your questions or commands in the input field
-3. **Sample Questions**: Use the provided sample buttons for quick testing:
+2. **Safety Mode Control**: Use the toggle switch in the header to enable/disable risky mode
+   - **Safe Mode (Default)**: Dangerous commands are blocked or require confirmation
+   - **Risky Mode**: All commands allowed (use with caution)
+3. **Send Messages**: Type your questions or commands in the input field
+4. **Sample Questions**: Use the provided sample buttons for quick testing:
    - "What files are in the current directory?"
    - "Show me the contents of the README.md file"
-4. **View Responses**: Agent responses appear in real-time with markdown formatting
-5. **Expand Details**: Click on "Command Output" sections to see detailed execution results
+5. **View Responses**: Agent responses appear in real-time with markdown formatting
+6. **Expand Details**: Click on "Command Output" sections to see detailed execution results
 
 ### Sample Interactions
 
@@ -114,6 +119,29 @@ Agent: [Executes 'cat README.md' and displays file contents]
 User: Create a simple Python script that prints "Hello World"
 Agent: [Creates hello.py file with the requested content]
 ```
+
+### Safety Mode Control
+
+The application includes a user-controlled safety mode toggle that allows users to enable or disable risky operations:
+
+**Safe Mode (Default)**:
+- Dangerous commands are automatically blocked or require confirmation
+- System-critical operations are restricted
+- File deletion and modification commands are carefully evaluated
+- Network operations may be limited
+
+**Risky Mode**:
+- All commands are allowed without restrictions
+- Users have full control over system operations
+- Confirmation dialog appears when switching from safe to risky mode
+- Visual indicators show current safety status
+
+**Toggle Usage**:
+1. Click the safety mode toggle switch in the chat interface header
+2. When disabling safe mode, a confirmation dialog will appear
+3. Confirm or cancel the safety mode change
+4. Visual indicators update to reflect current safety status
+5. Agent responses include safety mode status messages
 
 ## 🔧 Configuration
 
@@ -142,7 +170,10 @@ The CLI agent behavior can be modified in `cli_agent.py` and safety rules in `sa
 
 ## 🔒 Security Features
 
+- **Safety Mode Toggle**: User-controlled safety mode with confirmation dialogs
 - **Safety Guardrails**: Built-in safety checks for command execution
+- **Dynamic Safety Control**: Real-time switching between safe and risky modes
+- **Command Risk Assessment**: Automatic evaluation of command safety levels
 - **CORS Protection**: Configurable cross-origin resource sharing
 - **Input Validation**: Server-side validation of user inputs
 - **Command Restrictions**: Configurable limits on executable commands
@@ -163,17 +194,44 @@ The CLI agent behavior can be modified in `cli_agent.py` and safety rules in `sa
 **Client to Server**:
 ```json
 {
-  "message": "Your question or command here"
+  "type": "chat_message",
+  "content": "Your question or command here",
+  "message_id": "unique_message_id"
+}
+```
+
+**Safety Mode Toggle**:
+```json
+{
+  "type": "toggle_safety_mode",
+  "enable_safe_mode": true,
+  "message_id": "unique_message_id"
+}
+```
+
+**Get Safety Status**:
+```json
+{
+  "type": "get_safety_status",
+  "message_id": "unique_message_id"
 }
 ```
 
 **Server to Client**:
 ```json
 {
-  "response": "Agent response in markdown format",
-  "command": "executed_command",
-  "output": "command_output",
-  "status": "success|error"
+  "type": "agent_response",
+  "content": "Agent response in markdown format",
+  "message_id": "unique_message_id"
+}
+```
+
+**Safety Status Response**:
+```json
+{
+  "type": "safety_status",
+  "safe_mode": true,
+  "message_id": "unique_message_id"
 }
 ```
 
@@ -197,7 +255,9 @@ The CLI agent behavior can be modified in `cli_agent.py` and safety rules in `sa
 The application uses Vue.js reactive data for:
 - WebSocket connection status
 - Chat messages and history
+- Safety mode status and toggle state
 - UI state management
+- Confirmation dialog states
 
 ## 🔧 Development
 
@@ -301,6 +361,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - **v1.1.0**: Added markdown rendering and syntax highlighting
 - **v1.2.0**: Improved UI with expandable command output
 - **v1.3.0**: Enhanced safety features and error handling
+- **v1.4.0**: Added risky mode toggle with user-controlled safety settings
 
 ## 👥 Authors
 

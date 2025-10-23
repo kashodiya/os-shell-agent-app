@@ -24,10 +24,7 @@ class CLIAgent(Agent):
         print(system_prompt)
         print("=" * 50)
         
-        if safe_mode:
-            print("🛡️  SAFETY MODE: ON - Dangerous commands will be blocked or require confirmation")
-        else:
-            print("⚠️  SAFETY MODE: OFF - All commands allowed (USE WITH CAUTION)")
+        self._print_safety_status()
         print("=" * 50)
         
         super().__init__(
@@ -40,6 +37,62 @@ class CLIAgent(Agent):
         self.session_id = session_id or f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         self.memory_file = f".cli_memory_{self.session_id}.pkl"
         self.conversation_history = self._load_memory()
+    
+    def _print_safety_status(self):
+        """Print current safety mode status."""
+        if self.safe_mode:
+            print("🛡️  SAFETY MODE: ON - Dangerous commands will be blocked or require confirmation")
+        else:
+            print("⚠️  SAFETY MODE: OFF - All commands allowed (USE WITH CAUTION)")
+    
+    def toggle_safety_mode(self, enable_safe_mode: bool = None) -> Dict[str, Any]:
+        """Toggle or set the safety mode for this agent instance.
+        
+        Args:
+            enable_safe_mode: If provided, sets the safety mode to this value.
+                            If None, toggles the current mode.
+        
+        Returns:
+            Dictionary with the new safety mode status and message.
+        """
+        if enable_safe_mode is None:
+            # Toggle current mode
+            self.safe_mode = not self.safe_mode
+        else:
+            # Set to specific mode
+            self.safe_mode = enable_safe_mode
+        
+        # Update safety guardrails
+        self.safety.safe_mode = self.safe_mode
+        
+        # Print status update
+        print("=" * 50)
+        print("🔄 SAFETY MODE CHANGED:")
+        self._print_safety_status()
+        print("=" * 50)
+        
+        # Log the change
+        mode_str = "ENABLED" if self.safe_mode else "DISABLED"
+        log_message = f"Safety mode {mode_str} by user request"
+        self._add_to_memory('safety_toggle', f"safe_mode={self.safe_mode}", log_message, True)
+        
+        return {
+            "safe_mode": self.safe_mode,
+            "message": f"Safety mode {'enabled' if self.safe_mode else 'disabled'}",
+            "warning": None if self.safe_mode else "⚠️ CAUTION: Risky mode enabled - dangerous commands will not be blocked!"
+        }
+    
+    def get_safety_status(self) -> Dict[str, Any]:
+        """Get current safety mode status.
+        
+        Returns:
+            Dictionary with current safety mode information.
+        """
+        return {
+            "safe_mode": self.safe_mode,
+            "status": "enabled" if self.safe_mode else "disabled",
+            "description": "Dangerous commands are blocked or require confirmation" if self.safe_mode else "All commands allowed without safety checks"
+        }
     
     def _load_system_prompt(self) -> str:
         """Load system prompt from SYSTEM-PROMPT.md file."""
