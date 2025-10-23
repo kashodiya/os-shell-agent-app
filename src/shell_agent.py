@@ -6,75 +6,59 @@ import subprocess
 import sys
 from typing import Dict, List, Optional, Any, Union
 
-from strands import Agent, Tool, ToolCall, ToolCallResult, ToolError
+from strands import Agent, tool
 
-class ShellCommandTool(Tool):
-    """Tool for executing shell commands."""
+@tool
+def shell_command(command: str) -> Dict[str, Any]:
+    """Execute a shell command and return its output.
     
-    def __init__(self):
-        super().__init__(
-            name="shell_command",
-            description="Execute a shell command and return its output",
-            parameters={
-                "command": {
-                    "type": "string",
-                    "description": "The shell command to execute"
-                }
-            }
-        )
-    
-    def execute(self, parameters: Dict[str, Any]) -> Union[Dict[str, Any], ToolError]:
-        """Execute the shell command and return its output."""
-        command = parameters.get("command")
-        if not command:
-            return ToolError("No command provided")
+    Args:
+        command: The shell command to execute
         
-        try:
-            # Execute the command and capture output
-            result = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=60  # Timeout after 60 seconds
-            )
-            
-            return {
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "exit_code": result.returncode
-            }
-        except subprocess.TimeoutExpired:
-            return ToolError("Command timed out after 60 seconds")
-        except Exception as e:
-            return ToolError(f"Error executing command: {str(e)}")
-
-class PlanningTool(Tool):
-    """Tool for creating and managing execution plans."""
+    Returns:
+        A dictionary containing stdout, stderr, and exit_code
+    """
+    if not command:
+        raise ValueError("No command provided")
     
-    def __init__(self):
-        super().__init__(
-            name="create_plan",
-            description="Create a step-by-step plan to accomplish a complex task",
-            parameters={
-                "task": {
-                    "type": "string",
-                    "description": "The task that needs to be planned"
-                }
-            }
+    try:
+        # Execute the command and capture output
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=60  # Timeout after 60 seconds
         )
-    
-    def execute(self, parameters: Dict[str, Any]) -> Union[Dict[str, Any], ToolError]:
-        """Create a plan for the given task."""
-        task = parameters.get("task")
-        if not task:
-            return ToolError("No task provided")
         
-        # This tool doesn't actually execute anything - it just asks the agent
-        # to create a plan, which it will do using its reasoning capabilities
         return {
-            "message": f"Please create a step-by-step plan for: {task}"
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "exit_code": result.returncode
         }
+    except subprocess.TimeoutExpired:
+        raise ValueError("Command timed out after 60 seconds")
+    except Exception as e:
+        raise ValueError(f"Error executing command: {str(e)}")
+
+@tool
+def create_plan(task: str) -> Dict[str, str]:
+    """Create a step-by-step plan to accomplish a complex task.
+    
+    Args:
+        task: The task that needs to be planned
+        
+    Returns:
+        A dictionary containing a message with the planning request
+    """
+    if not task:
+        raise ValueError("No task provided")
+    
+    # This tool doesn't actually execute anything - it just asks the agent
+    # to create a plan, which it will do using its reasoning capabilities
+    return {
+        "message": f"Please create a step-by-step plan for: {task}"
+    }
 
 class ShellAgent:
     """Shell Agent that can execute CLI commands."""
@@ -82,7 +66,7 @@ class ShellAgent:
     def __init__(self, model_id: Optional[str] = None):
         """Initialize the Shell Agent with tools."""
         self.agent = Agent(
-            tools=[ShellCommandTool(), PlanningTool()],
+            tools=[shell_command, create_plan],
             model_id=model_id
         )
     

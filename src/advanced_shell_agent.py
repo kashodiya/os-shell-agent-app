@@ -10,146 +10,104 @@ import sys
 import time
 from typing import Dict, List, Optional, Any, Union
 
-from strands import Agent, Tool, ToolCall, ToolCallResult, ToolError
+from strands import Agent, tool
 
-class ShellCommandTool(Tool):
-    """Tool for executing shell commands."""
+@tool
+def shell_command(command: str) -> Dict[str, Any]:
+    """Execute a shell command and return its output.
     
-    def __init__(self):
-        super().__init__(
-            name="shell_command",
-            description="Execute a shell command and return its output",
-            parameters={
-                "command": {
-                    "type": "string",
-                    "description": "The shell command to execute"
-                }
-            }
-        )
-    
-    def execute(self, parameters: Dict[str, Any]) -> Union[Dict[str, Any], ToolError]:
-        """Execute the shell command and return its output."""
-        command = parameters.get("command")
-        if not command:
-            return ToolError("No command provided")
+    Args:
+        command: The shell command to execute
         
-        try:
-            # Execute the command and capture output
-            result = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=60  # Timeout after 60 seconds
-            )
-            
-            return {
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "exit_code": result.returncode
-            }
-        except subprocess.TimeoutExpired:
-            return ToolError("Command timed out after 60 seconds")
-        except Exception as e:
-            return ToolError(f"Error executing command: {str(e)}")
-
-class TaskPlannerTool(Tool):
-    """Tool for creating a task plan."""
+    Returns:
+        A dictionary containing stdout, stderr, and exit_code
+    """
+    if not command:
+        raise ValueError("No command provided")
     
-    def __init__(self):
-        super().__init__(
-            name="create_task_plan",
-            description="Create a step-by-step plan to accomplish a complex task",
-            parameters={
-                "task": {
-                    "type": "string",
-                    "description": "The complex task that needs to be planned"
-                }
-            }
+    try:
+        # Execute the command and capture output
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=60  # Timeout after 60 seconds
         )
-    
-    def execute(self, parameters: Dict[str, Any]) -> Union[Dict[str, Any], ToolError]:
-        """Create a plan for the given task."""
-        task = parameters.get("task")
-        if not task:
-            return ToolError("No task provided")
         
-        # This tool doesn't actually execute anything - it just asks the agent
-        # to create a plan, which it will do using its reasoning capabilities
         return {
-            "message": f"Create a JSON array of steps for: {task}. Each step should have a 'description' and 'command' field."
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "exit_code": result.returncode
         }
+    except subprocess.TimeoutExpired:
+        raise ValueError("Command timed out after 60 seconds")
+    except Exception as e:
+        raise ValueError(f"Error executing command: {str(e)}")
 
-class FileReadTool(Tool):
-    """Tool for reading files."""
+@tool
+def create_task_plan(task: str) -> Dict[str, str]:
+    """Create a step-by-step plan to accomplish a complex task.
     
-    def __init__(self):
-        super().__init__(
-            name="read_file",
-            description="Read the contents of a file",
-            parameters={
-                "path": {
-                    "type": "string",
-                    "description": "Path to the file to read"
-                }
-            }
-        )
-    
-    def execute(self, parameters: Dict[str, Any]) -> Union[Dict[str, Any], ToolError]:
-        """Read the contents of a file."""
-        path = parameters.get("path")
-        if not path:
-            return ToolError("No file path provided")
+    Args:
+        task: The complex task that needs to be planned
         
-        try:
-            with open(path, 'r') as file:
-                content = file.read()
-            return {"content": content}
-        except Exception as e:
-            return ToolError(f"Error reading file: {str(e)}")
+    Returns:
+        A dictionary containing a message with the planning request
+    """
+    if not task:
+        raise ValueError("No task provided")
+    
+    # This tool doesn't actually execute anything - it just asks the agent
+    # to create a plan, which it will do using its reasoning capabilities
+    return {
+        "message": f"Create a JSON array of steps for: {task}. Each step should have a 'description' and 'command' field."
+    }
 
-class FileWriteTool(Tool):
-    """Tool for writing to files."""
+@tool
+def read_file(path: str) -> Dict[str, str]:
+    """Read the contents of a file.
     
-    def __init__(self):
-        super().__init__(
-            name="write_file",
-            description="Write content to a file",
-            parameters={
-                "path": {
-                    "type": "string",
-                    "description": "Path to the file to write"
-                },
-                "content": {
-                    "type": "string",
-                    "description": "Content to write to the file"
-                },
-                "append": {
-                    "type": "boolean",
-                    "description": "Whether to append to the file instead of overwriting",
-                    "default": False
-                }
-            }
-        )
+    Args:
+        path: Path to the file to read
+        
+    Returns:
+        A dictionary containing the file content
+    """
+    if not path:
+        raise ValueError("No file path provided")
     
-    def execute(self, parameters: Dict[str, Any]) -> Union[Dict[str, Any], ToolError]:
-        """Write content to a file."""
-        path = parameters.get("path")
-        content = parameters.get("content")
-        append = parameters.get("append", False)
+    try:
+        with open(path, 'r') as file:
+            content = file.read()
+        return {"content": content}
+    except Exception as e:
+        raise ValueError(f"Error reading file: {str(e)}")
+
+@tool
+def write_file(path: str, content: str, append: bool = False) -> Dict[str, Any]:
+    """Write content to a file.
+    
+    Args:
+        path: Path to the file to write
+        content: Content to write to the file
+        append: Whether to append to the file instead of overwriting
         
-        if not path:
-            return ToolError("No file path provided")
-        if content is None:
-            return ToolError("No content provided")
-        
-        try:
-            mode = 'a' if append else 'w'
-            with open(path, mode) as file:
-                file.write(content)
-            return {"success": True, "path": path}
-        except Exception as e:
-            return ToolError(f"Error writing to file: {str(e)}")
+    Returns:
+        A dictionary indicating success and the file path
+    """
+    if not path:
+        raise ValueError("No file path provided")
+    if content is None:
+        raise ValueError("No content provided")
+    
+    try:
+        mode = 'a' if append else 'w'
+        with open(path, mode) as file:
+            file.write(content)
+        return {"success": True, "path": path}
+    except Exception as e:
+        raise ValueError(f"Error writing to file: {str(e)}")
 
 class AdvancedShellAgent:
     """Advanced Shell Agent that can execute complex CLI tasks."""
@@ -159,10 +117,10 @@ class AdvancedShellAgent:
         self.verbose = verbose
         self.agent = Agent(
             tools=[
-                ShellCommandTool(),
-                TaskPlannerTool(),
-                FileReadTool(),
-                FileWriteTool()
+                shell_command,
+                create_task_plan,
+                read_file,
+                write_file
             ],
             model_id=model_id
         )

@@ -20,12 +20,15 @@ An AI agent that can execute tasks using shell commands. Built with the [Strands
 
 2. Install the required dependencies:
    ```
-   pip install strands-agents
+   pip install -r requirements.txt
+   # or
+   pip install strands-agents strands-agents-tools
    ```
 
 3. Set up your model provider credentials:
    - For Amazon Bedrock (default provider), set up your AWS credentials following the [Boto3 documentation](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html)
    - Enable model access in Amazon Bedrock for Claude 4 Sonnet
+   - The default model used is `us.anthropic.claude-sonnet-4-20250514-v1:0`, but you can specify a different model using the `--model` option or the `STRANDS_MODEL_ID` environment variable
 
 ## Usage
 

@@ -44,8 +44,9 @@ def main():
     # Get the task from arguments
     task = " ".join(args.task)
     
-    # Get model ID from arguments or environment variable
-    model_id = args.model or os.environ.get("STRANDS_MODEL_ID")
+    # Get model ID from arguments, environment variable, or use default
+    default_model = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+    model_id = args.model or os.environ.get("STRANDS_MODEL_ID", default_model)
     
     if args.verbose:
         print(f"Task: {task}")

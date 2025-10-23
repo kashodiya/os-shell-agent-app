@@ -13,6 +13,7 @@ setup(
     package_dir={"": "src"},
     install_requires=[
         "strands-agents>=1.13.0",
+        "strands-agents-tools>=0.1.0",
     ],
     python_requires=">=3.8",
     entry_points={
