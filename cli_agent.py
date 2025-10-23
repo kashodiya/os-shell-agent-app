@@ -433,8 +433,10 @@ Provide a concise, helpful answer in plain English:"""
             
             print(f"📝 Generated answer: {answer[:100]}{'...' if len(answer) > 100 else ''}")
             
-            # Save to memory
-            self._store_interaction_memory('question', question, answer, exec_result['success'])
+            # Save to memory - store both the question and the full interaction
+            self._store_interaction_memory('question_answer', question, answer, exec_result['success'])
+            # Also store the user question separately for conversation history
+            self._store_interaction_memory('user_question', f"User asked: {question}", f"Answered with command: {command}", exec_result['success'])
             
             return {
                 "question": question,
@@ -446,7 +448,8 @@ Provide a concise, helpful answer in plain English:"""
             
         except Exception as e:
             error_msg = f"Sorry, I couldn't process your question: {str(e)}"
-            self._store_interaction_memory('question', question, error_msg, False)
+            self._store_interaction_memory('question_answer', question, error_msg, False)
+            self._store_interaction_memory("user_question", f"User asked: {question}", "Error occurred", False)
             return {
                 "question": question,
                 "command_used": "unknown",
@@ -571,7 +574,9 @@ Provide a concise, helpful answer in plain English:"""
             
             print(f"📝 Generated answer: {answer[:100]}{'...' if len(answer) > 100 else ''}")
             
-            self._store_interaction_memory('question', question, answer, exec_result['success'])
+            self._store_interaction_memory('question_answer', question, answer, exec_result['success'])
+            # Also store the user question separately for conversation history
+            self._store_interaction_memory('user_question', f"User asked: {question}", f"Answered with command: {command}", exec_result['success'])
             
             return {
                 "question": question,
@@ -583,7 +588,8 @@ Provide a concise, helpful answer in plain English:"""
             
         except Exception as e:
             error_msg = f"Sorry, I couldn't process your question: {str(e)}"
-            self._store_interaction_memory('question', question, error_msg, False)
+            self._store_interaction_memory('question_answer', question, error_msg, False)
+            self._store_interaction_memory("user_question", f"User asked: {question}", "Error occurred", False)
             return {
                 "question": question,
                 "command_used": "unknown",
