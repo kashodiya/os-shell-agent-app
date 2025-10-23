@@ -1,0 +1,332 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shell Agent Chat</title>
+    
+    <!-- Vuetify CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/vuetify@3.5.8/dist/vuetify.min.css" rel="stylesheet">
+    
+    <!-- Material Design Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" rel="stylesheet">
+    
+    <!-- Markdown-it for rendering markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.0.0/dist/markdown-it.min.js"></script>
+    
+    <!-- Highlight.js for code syntax highlighting -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/highlight.min.js"></script>
+    
+    <style>
+        [v-cloak] { display: none; }
+        
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        
+        .chat-container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .messages-container {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+        
+        .message {
+            margin-bottom: 16px;
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 8px;
+        }
+        
+        .user-message {
+            background-color: #e3f2fd;
+            align-self: flex-end;
+            margin-left: auto;
+        }
+        
+        .assistant-message {
+            background-color: #f5f5f5;
+            align-self: flex-start;
+            margin-right: auto;
+        }
+        
+        .input-container {
+            padding: 16px;
+            border-top: 1px solid #e0e0e0;
+        }
+        
+        .markdown-content {
+            line-height: 1.6;
+        }
+        
+        .markdown-content pre {
+            background-color: #f6f8fa;
+            border-radius: 6px;
+            padding: 16px;
+            overflow-x: auto;
+        }
+        
+        .markdown-content code {
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 85%;
+            padding: 0.2em 0.4em;
+            border-radius: 3px;
+            background-color: rgba(27, 31, 35, 0.05);
+        }
+        
+        .markdown-content pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+        
+        .typing-indicator {
+            display: inline-block;
+            padding: 12px 16px;
+            background-color: #f5f5f5;
+            border-radius: 8px;
+        }
+        
+        .typing-indicator span {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background-color: #9e9e9e;
+            border-radius: 50%;
+            margin-right: 4px;
+            animation: typing 1s infinite ease-in-out;
+        }
+        
+        .typing-indicator span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        
+        .typing-indicator span:nth-child(3) {
+            animation-delay: 0.4s;
+            margin-right: 0;
+        }
+        
+        @keyframes typing {
+            0% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+            100% { transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div id="app" v-cloak>
+        <v-app>
+            <v-app-bar color="primary" app>
+                <v-app-bar-title>Shell Agent Chat</v-app-bar-title>
+            </v-app-bar>
+            
+            <v-main>
+                <div class="chat-container">
+                    <div class="messages-container" ref="messagesContainer">
+                        <div v-for="(message, index) in messages" :key="index" 
+                             :class="['message', message.role === 'user' ? 'user-message' : 'assistant-message']">
+                            <div v-if="message.role === 'user'">
+                                {{ message.content }}
+                            </div>
+                            <div v-else class="markdown-content" v-html="renderMarkdown(message.content)"></div>
+                        </div>
+                        
+                        <div v-if="isTyping" class="message assistant-message typing-indicator">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                    </div>
+                    
+                    <div class="input-container">
+                        <v-form @submit.prevent="sendMessage">
+                            <v-row>
+                                <v-col cols="12">
+                                    <v-textarea
+                                        v-model="userInput"
+                                        label="Ask a question..."
+                                        rows="2"
+                                        auto-grow
+                                        hide-details
+                                        @keydown.enter.prevent="sendMessage"
+                                    ></v-textarea>
+                                </v-col>
+                                <v-col cols="12" class="d-flex justify-end">
+                                    <v-btn
+                                        color="primary"
+                                        type="submit"
+                                        :disabled="!userInput.trim() || isTyping"
+                                    >
+                                        Send
+                                    </v-btn>
+                                </v-col>
+                            </v-row>
+                        </v-form>
+                    </div>
+                </div>
+            </v-main>
+        </v-app>
+    </div>
+
+    <!-- Vue.js -->
+    <script src="https://cdn.jsdelivr.net/npm/vue@3.4.21/dist/vue.global.js"></script>
+    
+    <!-- Vuetify -->
+    <script src="https://cdn.jsdelivr.net/npm/vuetify@3.5.8/dist/vuetify.min.js"></script>
+    
+    <!-- Vue Router -->
+    <script src="https://cdn.jsdelivr.net/npm/vue-router@4.3.0/dist/vue-router.global.js"></script>
+    
+    <script>
+        // Generate a unique client ID
+        const clientId = 'client_' + Math.random().toString(36).substring(2, 15);
+        
+        // Create markdown renderer
+        const md = window.markdownit({
+            html: false,
+            linkify: true,
+            typographer: true,
+            highlight: function (str, lang) {
+                if (lang && hljs.getLanguage(lang)) {
+                    try {
+                        return hljs.highlight(str, { language: lang }).value;
+                    } catch (__) {}
+                }
+                return ''; // use external default escaping
+            }
+        });
+        
+        // Create Vue app
+        const app = Vue.createApp({
+            data() {
+                return {
+                    userInput: '',
+                    messages: [],
+                    currentResponse: '',
+                    isTyping: false,
+                    socket: null
+                };
+            },
+            
+            mounted() {
+                this.connectWebSocket();
+                
+                // Scroll to bottom when messages change
+                this.$watch('messages', () => {
+                    this.$nextTick(() => {
+                        this.scrollToBottom();
+                    });
+                }, { deep: true });
+            },
+            
+            methods: {
+                connectWebSocket() {
+                    // Create WebSocket connection
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${protocol}//${window.location.host}/ws/${clientId}`;
+                    
+                    this.socket = new WebSocket(wsUrl);
+                    
+                    // Connection opened
+                    this.socket.addEventListener('open', (event) => {
+                        console.log('WebSocket connection established');
+                    });
+                    
+                    // Listen for messages
+                    this.socket.addEventListener('message', (event) => {
+                        const message = JSON.parse(event.data);
+                        
+                        if (message.type === 'response_chunk') {
+                            if (!this.isTyping) {
+                                this.isTyping = true;
+                                this.currentResponse = '';
+                                this.messages.push({
+                                    role: 'assistant',
+                                    content: ''
+                                });
+                            }
+                            
+                            this.currentResponse += message.content;
+                            this.messages[this.messages.length - 1].content = this.currentResponse;
+                        }
+                        else if (message.type === 'response_complete') {
+                            this.isTyping = false;
+                        }
+                        else if (message.type === 'history') {
+                            this.messages = message.content;
+                        }
+                    });
+                    
+                    // Connection closed
+                    this.socket.addEventListener('close', (event) => {
+                        console.log('WebSocket connection closed');
+                        // Try to reconnect after a delay
+                        setTimeout(() => {
+                            this.connectWebSocket();
+                        }, 3000);
+                    });
+                    
+                    // Connection error
+                    this.socket.addEventListener('error', (event) => {
+                        console.error('WebSocket error:', event);
+                    });
+                },
+                
+                sendMessage() {
+                    const message = this.userInput.trim();
+                    if (!message || this.isTyping) return;
+                    
+                    // Add user message to chat
+                    this.messages.push({
+                        role: 'user',
+                        content: message
+                    });
+                    
+                    // Clear input
+                    this.userInput = '';
+                    
+                    // Send message to server
+                    this.socket.send(JSON.stringify({
+                        type: 'question',
+                        content: message
+                    }));
+                    
+                    // Scroll to bottom
+                    this.scrollToBottom();
+                },
+                
+                renderMarkdown(text) {
+                    return md.render(text);
+                },
+                
+                scrollToBottom() {
+                    const container = this.$refs.messagesContainer;
+                    container.scrollTop = container.scrollHeight;
+                }
+            }
+        });
+        
+        // Create Vuetify instance
+        const vuetify = Vuetify.createVuetify({
+            theme: {
+                defaultTheme: 'light'
+            }
+        });
+        
+        // Use Vuetify
+        app.use(vuetify);
+        
+        // Mount app
+        app.mount('#app');
+    </script>
+</body>
+</html>
