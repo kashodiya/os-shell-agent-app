@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OS Shell Agent</title>
+    
+    <!-- Vuetify CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/vuetify@3.4.4/dist/vuetify.min.css" rel="stylesheet">
+    <!-- Material Design Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.3.67/css/materialdesignicons.min.css" rel="stylesheet">
+    <!-- Marked.js for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
+    <!-- Highlight.js for code syntax highlighting -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/highlight.min.js"></script>
+    
+    <style>
+        .chat-container {
+            height: calc(100vh - 200px);
+            overflow-y: auto;
+        }
+        
+        .message-bubble {
+            max-width: 80%;
+            margin: 8px 0;
+        }
+        
+        .user-message {
+            margin-left: auto;
+            background-color: #1976d2 !important;
+            color: white !important;
+        }
+        
+        .agent-message {
+            margin-right: auto;
+            background-color: #f5f5f5 !important;
+        }
+        
+        .typing-indicator {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+        }
+        
+        .typing-dots {
+            display: flex;
+            gap: 4px;
+        }
+        
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #666;
+            animation: typing 1.4s infinite ease-in-out;
+        }
+        
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        
+        @keyframes typing {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+        
+        .command-output {
+            font-family: 'Courier New', monospace;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            padding: 12px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+        
+        .success-output {
+            border-left: 4px solid #4caf50;
+        }
+        
+        .error-output {
+            border-left: 4px solid #f44336;
+        }
+        
+        .risk-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: bold;
+        }
+        
+        .risk-safe { background-color: #e8f5e8; color: #2e7d32; }
+        .risk-low { background-color: #fff3e0; color: #f57c00; }
+        .risk-medium { background-color: #fff3e0; color: #ff9800; }
+        .risk-high { background-color: #ffebee; color: #d32f2f; }
+        .risk-critical { background-color: #ffebee; color: #b71c1c; }
+        
+        .markdown-content {
+            line-height: 1.6;
+        }
+        
+        .markdown-content pre {
+            background-color: #f5f5f5;
+            padding: 12px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        
+        .markdown-content code {
+            background-color: #f5f5f5;
+            padding: 2px 4px;
+            border-radius: 2px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .markdown-content pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <v-app>
+            <!-- App Bar -->
+            <v-app-bar color="primary" dark>
+                <v-app-bar-title>
+                    <v-icon class="mr-2">mdi-robot</v-icon>
+                    OS Shell Agent
+                </v-app-bar-title>
+                
+                <v-spacer></v-spacer>
+                
+                <!-- Navigation -->
+                <v-btn text @click="$router.push('/')">
+                    <v-icon class="mr-1">mdi-home</v-icon>
+                    Home
+                </v-btn>
+                <v-btn text @click="$router.push('/chat')">
+                    <v-icon class="mr-1">mdi-chat</v-icon>
+                    Chat
+                </v-btn>
+                <v-btn text @click="$router.push('/about')">
+                    <v-icon class="mr-1">mdi-information</v-icon>
+                    About
+                </v-btn>
+                
+                <!-- Connection Status -->
+                <v-chip 
+                    :color="connectionStatus === 'connected' ? 'success' : 'error'" 
+                    small 
+                    class="ml-4"
+                >
+                    <v-icon small class="mr-1">
+                        {{ connectionStatus === 'connected' ? 'mdi-wifi' : 'mdi-wifi-off' }}
+                    </v-icon>
+                    {{ connectionStatus }}
+                </v-chip>
+            </v-app-bar>
+            
+            <!-- Main Content -->
+            <v-main>
+                <router-view></router-view>
+            </v-main>
+            
+            <!-- Footer -->
+            <v-footer color="primary" dark>
+                <v-spacer></v-spacer>
+                <span>&copy; 2024 OS Shell Agent - Powered by Strands Agents</span>
+                <v-spacer></v-spacer>
+            </v-footer>
+        </v-app>
+    </div>
+
+    <!-- Vue Templates -->
+    
+    <!-- Home Component Template -->
+    <script type="text/x-template" id="home-template">
+        <v-container fluid>
+            <v-row justify="center">
+                <v-col cols="12" md="8">
+                    <v-card class="mx-auto" elevation="4">
+                        <v-card-title class="text-h4 text-center pa-6">
+                            <v-icon size="48" class="mr-4" color="primary">mdi-robot</v-icon>
+                            Welcome to OS Shell Agent
+                        </v-card-title>
+                        
+                        <v-card-text class="pa-6">
+                            <v-row>
+                                <v-col cols="12" md="6">
+                                    <h3 class="text-h6 mb-3">
+                                        <v-icon class="mr-2" color="primary">mdi-lightning-bolt</v-icon>
+                                        What is OS Shell Agent?
+                                    </h3>
+                                    <p class="text-body-1">
+                                        OS Shell Agent is an intelligent assistant powered by Strands Agents that can execute 
+                                        system commands, answer questions about your system, and help you with various tasks 
+                                        through natural language interaction.
+                                    </p>
+                                </v-col>
+                                
+                                <v-col cols="12" md="6">
+                                    <h3 class="text-h6 mb-3">
+                                        <v-icon class="mr-2" color="primary">mdi-shield-check</v-icon>
+                                        Safety Features
+                                    </h3>
+                                    <p class="text-body-1">
+                                        Built with safety in mind, the agent includes risk assessment, command validation, 
+                                        and confirmation prompts for potentially dangerous operations.
+                                    </p>
+                                </v-col>
+                            </v-row>
+                            
+                            <v-divider class="my-6"></v-divider>
+                            
+                            <h3 class="text-h6 mb-4">
+                                <v-icon class="mr-2" color="primary">mdi-feature-search</v-icon>
+                                Key Features
+                            </h3>
+                            
+                            <v-row>
+                                <v-col cols="12" md="4">
+                                    <v-card variant="outlined" class="h-100">
+                                        <v-card-text class="text-center">
+                                            <v-icon size="48" color="success" class="mb-3">mdi-chat</v-icon>
+                                            <h4 class="text-h6 mb-2">Natural Language Interface</h4>
+                                            <p class="text-body-2">
+                                                Ask questions in plain English and get intelligent responses
+                                            </p>
+                                        </v-card-text>
+                                    </v-card>
+                                </v-col>
+                                
+                                <v-col cols="12" md="4">
+                                    <v-card variant="outlined" class="h-100">
+                                        <v-card-text class="text-center">
+                                            <v-icon size="48" color="warning" class="mb-3">mdi-terminal</v-icon>
+                                            <h4 class="text-h6 mb-2">Command Execution</h4>
+                                            <p class="text-body-2">
+                                                Execute system commands with safety checks and risk assessment
+                                            </p>
+                                        </v-card-text>
+                                    </v-card>
+                                </v-col>
+                                
+                                <v-col cols="12" md="4">
+                                    <v-card variant="outlined" class="h-100">
+                                        <v-card-text class="text-center">
+                                            <v-icon size="48" color="info" class="mb-3">mdi-memory</v-icon>
+                                            <h4 class="text-h6 mb-2">Context Awareness</h4>
+                                            <p class="text-body-2">
+                                                Maintains conversation history and context for better assistance
+                                            </p>
+                                        </v-card-text>
+                                    </v-card>
+                                </v-col>
+                            </v-row>
+                        </v-card-text>
+                        
+                        <v-card-actions class="pa-6">
+                            <v-spacer></v-spacer>
+                            <v-btn 
+                                color="primary" 
+                                size="large" 
+                                @click="$router.push('/chat')"
+                                prepend-icon="mdi-chat"
+                            >
+                                Start Chatting
+                            </v-btn>
+                            <v-spacer></v-spacer>
+                        </v-card-actions>
+                    </v-card>
+                </v-col>
+            </v-row>
+        </v-container>
+    </script>
+
+    <!-- About Component Template -->
+    <script type="text/x-template" id="about-template">
+        <v-container fluid>
+            <v-row justify="center">
+                <v-col cols="12" md="8">
+                    <v-card elevation="4">
+                        <v-card-title class="text-h4 text-center pa-6">
+                            <v-icon size="48" class="mr-4" color="primary">mdi-information</v-icon>
+                            About OS Shell Agent
+                        </v-card-title>
+                        
+                        <v-card-text class="pa-6">
+                            <v-row>
+                                <v-col cols="12">
+                                    <h3 class="text-h6 mb-3">Technology Stack</h3>
+                                    <v-chip-group>
+                                        <v-chip color="primary" variant="outlined">
+                                            <v-icon start>mdi-language-python</v-icon>
+                                            Python
+                                        </v-chip>
+                                        <v-chip color="success" variant="outlined">
+                                            <v-icon start>mdi-api</v-icon>
+                                            FastAPI
+                                        </v-chip>
+                                        <v-chip color="info" variant="outlined">
+                                            <v-icon start>mdi-vuejs</v-icon>
+                                            Vue.js 3
+                                        </v-chip>
+                                        <v-chip color="purple" variant="outlined">
+                                            <v-icon start>mdi-material-design</v-icon>
+                                            Vuetify
+                                        </v-chip>
+                                        <v-chip color="orange" variant="outlined">
+                                            <v-icon start>mdi-web-sync</v-icon>
+                                            WebSockets
+                                        </v-chip>
+                                        <v-chip color="teal" variant="outlined">
+                                            <v-icon start>mdi-robot</v-icon>
+                                            Strands Agents
+                                        </v-chip>
+                                    </v-chip-group>
+                                </v-col>
+                            </v-row>
+                            
+                            <v-divider class="my-6"></v-divider>
+                            
+                            <v-row>
+                                <v-col cols="12" md="6">
+                                    <h3 class="text-h6 mb-3">
+                                        <v-icon class="mr-2" color="primary">mdi-cog</v-icon>
+                                        How It Works
+                                    </h3>
+                                    <v-list>
+                                        <v-list-item>
+                                            <v-list-item-title>1. Natural Language Processing</v-list-item-title>
+                                            <v-list-item-subtitle>
+                                                Your questions are processed by advanced AI models
+                                            </v-list-item-subtitle>
+                                        </v-list-item>
+                                        <v-list-item>
+                                            <v-list-item-title>2. Command Translation</v-list-item-title>
+                                            <v-list-item-subtitle>
+                                                Questions are converted to appropriate system commands
+                                            </v-list-item-subtitle>
+                                        </v-list-item>
+                                        <v-list-item>
+                                            <v-list-item-title>3. Safety Validation</v-list-item-title>
+                                            <v-list-item-subtitle>
+                                                Commands are checked for safety and risk level
+                                            </v-list-item-subtitle>
+                                        </v-list-item>
+                                        <v-list-item>
+                                            <v-list-item-title>4. Execution & Response</v-list-item-title>
+                                            <v-list-item-subtitle>
+                                                Safe commands are executed and results are formatted
+                                            </v-list-item-subtitle>
+                                        </v-list-item>
+                                    </v-list>
+                                </v-col>
+                                
+                                <v-col cols="12" md="6">
+                                    <h3 class="text-h6 mb-3">
+                                        <v-icon class="mr-2" color="primary">mdi-shield-check</v-icon>
+                                        Safety Measures
+                                    </h3>
+                                    <v-list>
+                                        <v-list-item>
+                                            <template v-slot:prepend>
+                                                <v-icon color="success">mdi-check-circle</v-icon>
+                                            </template>
+                                            <v-list-item-title>Risk Assessment</v-list-item-title>
+                                            <v-list-item-subtitle>
+                                                Every command is evaluated for potential risks
+                                            </v-list-item-subtitle>
+                                        </v-list-item>
+                                        <v-list-item>
+                                            <template v-slot:prepend>
+                                                <v-icon color="success">mdi-check-circle</v-icon>
+                                            </template>
+                                            <v-list-item-title>Command Blocking</v-list-item-title>
+                                            <v-list-item-subtitle>
+                                                Dangerous commands are automatically blocked
+                                            </v-list-item-subtitle>
+                                        </v-list-item>
+                                        <v-list-item>
+                                            <template v-slot:prepend>
+                                                <v-icon color="success">mdi-check-circle</v-icon>
+                                            </template>
+                                            <v-list-item-title>Confirmation Prompts</v-list-item-title>
+                                            <v-list-item-subtitle>
+                                                Risky operations require explicit confirmation
+                                            </v-list-item-subtitle>
+                                        </v-list-item>
+                                        <v-list-item>
+                                            <template v-slot:prepend>
+                                                <v-icon color="success">mdi-check-circle</v-icon>
+                                            </template>
+                                            <v-list-item-title>Session Isolation</v-list-item-title>
+                                            <v-list-item-subtitle>
+                                                Each user session is isolated and secure
+                                            </v-list-item-subtitle>
+                                        </v-list-item>
+                                    </v-list>
+                                </v-col>
+                            </v-row>
+                            
+                            <v-divider class="my-6"></v-divider>
+                            
+                            <div class="text-center">
+                                <h3 class="text-h6 mb-3">
+                                    <v-icon class="mr-2" color="primary">mdi-github</v-icon>
+                                    Open Source
+                                </h3>
+                                <p class="text-body-1 mb-4">
+                                    This project is built with open source technologies and powered by Strands Agents.
+                                </p>
+                                <v-btn 
+                                    color="primary" 
+                                    variant="outlined"
+                                    href="https://strandsagents.com/" 
+                                    target="_blank"
+                                    prepend-icon="mdi-open-in-new"
+                                >
+                                    Learn More About Strands Agents
+                                </v-btn>
+                            </div>
+                        </v-card-text>
+                    </v-card>
+                </v-col>
+            </v-row>
+        </v-container>
+    </script>
+
+    <!-- Chat Component Template -->
+    <script type="text/x-template" id="chat-template">
+        <v-container fluid class="pa-0" style="height: 100vh;">
+            <v-row no-gutters style="height: 100%;">
+                <v-col cols="12">
+                    <v-card class="d-flex flex-column" style="height: calc(100vh - 128px);">
+                        <!-- Chat Header -->
+                        <v-card-title class="bg-primary text-white">
+                            <v-icon class="mr-2">mdi-chat</v-icon>
+                            Chat with OS Shell Agent
+                            <v-spacer></v-spacer>
+                            <v-btn 
+                                icon 
+                                variant="text" 
+                                @click="clearChat"
+                                :disabled="messages.length === 0"
+                            >
+                                <v-icon>mdi-delete-sweep</v-icon>
+                            </v-btn>
+                        </v-card-title>
+                        
+                        <!-- Chat Messages -->
+                        <v-card-text 
+                            ref="chatContainer" 
+                            class="flex-grow-1 overflow-y-auto pa-4"
+                            style="height: 0;"
+                        >
+                            <div v-if="messages.length === 0" class="text-center text-grey-500 mt-8">
+                                <v-icon size="64" class="mb-4">mdi-chat-outline</v-icon>
+                                <h3>Start a conversation</h3>
+                                <p>Ask me anything about your system or request command execution!</p>
+                                
+                                <v-row class="mt-6">
+                                    <v-col cols="12" md="4">
+                                        <v-card 
+                                            variant="outlined" 
+                                            class="pa-3 cursor-pointer hover-card"
+                                            @click="sendSampleMessage('What files are in the current directory?')"
+                                        >
+                                            <v-icon class="mb-2" color="primary">mdi-folder</v-icon>
+                                            <div class="text-body-2">List files in directory</div>
+                                        </v-card>
+                                    </v-col>
+                                    <v-col cols="12" md="4">
+                                        <v-card 
+                                            variant="outlined" 
+                                            class="pa-3 cursor-pointer hover-card"
+                                            @click="sendSampleMessage('What processes are currently running?')"
+                                        >
+                                            <v-icon class="mb-2" color="primary">mdi-cog</v-icon>
+                                            <div class="text-body-2">Show running processes</div>
+                                        </v-card>
+                                    </v-col>
+                                    <v-col cols="12" md="4">
+                                        <v-card 
+                                            variant="outlined" 
+                                            class="pa-3 cursor-pointer hover-card"
+                                            @click="sendSampleMessage('How much disk space is available?')"
+                                        >
+                                            <v-icon class="mb-2" color="primary">mdi-harddisk</v-icon>
+                                            <div class="text-body-2">Check disk space</div>
+                                        </v-card>
+                                    </v-col>
+                                </v-row>
+                            </div>
+                            
+                            <!-- Messages -->
+                            <div v-for="message in messages" :key="message.id" class="mb-4">
+                                <!-- User Message -->
+                                <div v-if="message.type === 'user'" class="d-flex justify-end">
+                                    <v-card 
+                                        class="message-bubble user-message" 
+                                        color="primary"
+                                    >
+                                        <v-card-text class="text-white">
+                                            {{ message.content }}
+                                        </v-card-text>
+                                    </v-card>
+                                </div>
+                                
+                                <!-- Agent Message -->
+                                <div v-else-if="message.type === 'agent'" class="d-flex justify-start">
+                                    <v-card class="message-bubble agent-message">
+                                        <v-card-text>
+                                            <div class="d-flex align-center mb-2">
+                                                <v-avatar size="24" class="mr-2">
+                                                    <v-icon>mdi-robot</v-icon>
+                                                </v-avatar>
+                                                <span class="text-body-2 text-grey-600">Agent</span>
+                                                <v-spacer></v-spacer>
+                                                <div v-if="message.command_used" class="risk-indicator risk-safe">
+                                                    <v-icon size="12">mdi-terminal</v-icon>
+                                                    {{ message.command_used }}
+                                                </div>
+                                            </div>
+                                            
+                                            <div 
+                                                class="markdown-content" 
+                                                v-html="renderMarkdown(message.content)"
+                                            ></div>
+                                            
+                                            <!-- Command Output -->
+                                            <div v-if="message.raw_output && (message.raw_output.stdout || message.raw_output.stderr)">
+                                                <v-divider class="my-3"></v-divider>
+                                                <v-expansion-panels variant="accordion">
+                                                    <v-expansion-panel>
+                                                        <v-expansion-panel-title>
+                                                            <v-icon class="mr-2">mdi-console</v-icon>
+                                                            Command Output
+                                                            <v-spacer></v-spacer>
+                                                            <v-chip 
+                                                                :color="message.success ? 'success' : 'error'" 
+                                                                size="small"
+                                                            >
+                                                                {{ message.success ? 'Success' : 'Error' }}
+                                                            </v-chip>
+                                                        </v-expansion-panel-title>
+                                                        <v-expansion-panel-text>
+                                                            <div 
+                                                                v-if="message.raw_output.stdout"
+                                                                class="command-output success-output mb-2"
+                                                            >
+                                                                <strong>STDOUT:</strong><br>
+                                                                {{ message.raw_output.stdout }}
+                                                            </div>
+                                                            <div 
+                                                                v-if="message.raw_output.stderr"
+                                                                class="command-output error-output"
+                                                            >
+                                                                <strong>STDERR:</strong><br>
+                                                                {{ message.raw_output.stderr }}
+                                                            </div>
+                                                        </v-expansion-panel-text>
+                                                    </v-expansion-panel>
+                                                </v-expansion-panels>
+                                            </div>
+                                        </v-card-text>
+                                    </v-card>
+                                </div>
+                                
+                                <!-- Error Message -->
+                                <div v-else-if="message.type === 'error'" class="d-flex justify-start">
+                                    <v-card class="message-bubble" color="error">
+                                        <v-card-text class="text-white">
+                                            <v-icon class="mr-2">mdi-alert-circle</v-icon>
+                                            {{ message.content }}
+                                        </v-card-text>
+                                    </v-card>
+                                </div>
+                            </div>
+                            
+                            <!-- Typing Indicator -->
+                            <div v-if="isTyping" class="d-flex justify-start">
+                                <v-card class="message-bubble agent-message">
+                                    <v-card-text>
+                                        <div class="typing-indicator">
+                                            <v-avatar size="24" class="mr-2">
+                                                <v-icon>mdi-robot</v-icon>
+                                            </v-avatar>
+                                            <span class="text-body-2 text-grey-600 mr-3">Agent is thinking</span>
+                                            <div class="typing-dots">
+                                                <div class="typing-dot"></div>
+                                                <div class="typing-dot"></div>
+                                                <div class="typing-dot"></div>
+                                            </div>
+                                        </div>
+                                    </v-card-text>
+                                </v-card>
+                            </div>
+                        </v-card-text>
+                        
+                        <!-- Message Input -->
+                        <v-card-actions class="pa-4">
+                            <v-text-field
+                                v-model="newMessage"
+                                label="Type your message or question..."
+                                variant="outlined"
+                                density="comfortable"
+                                hide-details
+                                @keyup.enter="sendMessage"
+                                :disabled="!isConnected || isTyping"
+                                append-inner-icon="mdi-send"
+                                @click:append-inner="sendMessage"
+                                class="flex-grow-1"
+                            ></v-text-field>
+                        </v-card-actions>
+                    </v-card>
+                </v-col>
+            </v-row>
+        </v-container>
+    </script>
+
+    <!-- Vue.js and dependencies -->
+    <script src="https://unpkg.com/vue@3.4.21/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/vue-router@4.2.5/dist/vue-router.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vuetify@3.4.4/dist/vuetify.min.js"></script>
+
+    <script>
+        const { createApp, ref, reactive, computed, onMounted, onUnmounted, nextTick } = Vue;
+        const { createRouter, createWebHashHistory } = VueRouter;
+        const { createVuetify } = Vuetify;
+
+        // Vuetify theme
+        const vuetify = createVuetify({
+            theme: {
+                defaultTheme: 'light',
+                themes: {
+                    light: {
+                        colors: {
+                            primary: '#1976d2',
+                            secondary: '#424242',
+                            accent: '#82b1ff',
+                            error: '#ff5252',
+                            info: '#2196f3',
+                            success: '#4caf50',
+                            warning: '#ffc107'
+                        }
+                    }
+                }
+            }
+        });
+
+        // Components
+        const Home = {
+            template: '#home-template'
+        };
+
+        const About = {
+            template: '#about-template'
+        };
+
+        const Chat = {
+            template: '#chat-template',
+            setup() {
+                const messages = ref([]);
+                const newMessage = ref('');
+                const isTyping = ref(false);
+                const isConnected = ref(false);
+                const ws = ref(null);
+                const clientId = ref(Math.random().toString(36).substr(2, 9));
+                const chatContainer = ref(null);
+
+                const sendMessage = () => {
+                    if (!newMessage.value.trim() || !isConnected.value || isTyping.value) return;
+
+                    const messageId = Date.now().toString();
+                    const userMessage = {
+                        id: messageId + '_user',
+                        type: 'user',
+                        content: newMessage.value.trim(),
+                        timestamp: new Date()
+                    };
+
+                    messages.value.push(userMessage);
+
+                    // Send to WebSocket
+                    ws.value.send(JSON.stringify({
+                        type: 'chat_message',
+                        content: newMessage.value.trim(),
+                        message_id: messageId
+                    }));
+
+                    newMessage.value = '';
+                    isTyping.value = true;
+                    scrollToBottom();
+                };
+
+                const sendSampleMessage = (message) => {
+                    newMessage.value = message;
+                    sendMessage();
+                };
+
+                const clearChat = () => {
+                    messages.value = [];
+                };
+
+                const renderMarkdown = (text) => {
+                    if (typeof marked !== 'undefined') {
+                        return marked.parse(text);
+                    }
+                    return text.replace(/\n/g, '<br>');
+                };
+
+                const scrollToBottom = () => {
+                    nextTick(() => {
+                        if (chatContainer.value) {
+                            chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
+                        }
+                    });
+                };
+
+                const connectWebSocket = () => {
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${protocol}//${window.location.host}/ws/${clientId.value}`;
+                    
+                    ws.value = new WebSocket(wsUrl);
+
+                    ws.value.onopen = () => {
+                        console.log('WebSocket connected');
+                        isConnected.value = true;
+                    };
+
+                    ws.value.onmessage = (event) => {
+                        const data = JSON.parse(event.data);
+                        console.log('Received:', data);
+
+                        switch (data.type) {
+                            case 'agent_response':
+                                isTyping.value = false;
+                                messages.value.push({
+                                    id: data.message_id + '_agent',
+                                    type: 'agent',
+                                    content: data.content,
+                                    command_used: data.command_used,
+                                    success: data.success,
+                                    raw_output: data.raw_output,
+                                    timestamp: new Date()
+                                });
+                                scrollToBottom();
+                                break;
+
+                            case 'error':
+                                isTyping.value = false;
+                                messages.value.push({
+                                    id: Date.now().toString(),
+                                    type: 'error',
+                                    content: data.message,
+                                    timestamp: new Date()
+                                });
+                                scrollToBottom();
+                                break;
+
+                            case 'typing':
+                                isTyping.value = true;
+                                break;
+
+                            case 'typing_stop':
+                                isTyping.value = false;
+                                break;
+                        }
+                    };
+
+                    ws.value.onclose = () => {
+                        console.log('WebSocket disconnected');
+                        isConnected.value = false;
+                        isTyping.value = false;
+                        
+                        // Attempt to reconnect after 3 seconds
+                        setTimeout(() => {
+                            if (!isConnected.value) {
+                                connectWebSocket();
+                            }
+                        }, 3000);
+                    };
+
+                    ws.value.onerror = (error) => {
+                        console.error('WebSocket error:', error);
+                        isConnected.value = false;
+                        isTyping.value = false;
+                    };
+                };
+
+                onMounted(() => {
+                    connectWebSocket();
+                });
+
+                onUnmounted(() => {
+                    if (ws.value) {
+                        ws.value.close();
+                    }
+                });
+
+                return {
+                    messages,
+                    newMessage,
+                    isTyping,
+                    isConnected,
+                    chatContainer,
+                    sendMessage,
+                    sendSampleMessage,
+                    clearChat,
+                    renderMarkdown
+                };
+            }
+        };
+
+        // Router
+        const routes = [
+            { path: '/', component: Home },
+            { path: '/chat', component: Chat },
+            { path: '/about', component: About }
+        ];
+
+        const router = createRouter({
+            history: createWebHashHistory(),
+            routes
+        });
+
+        // Main App
+        const app = createApp({
+            setup() {
+                const connectionStatus = ref('disconnected');
+
+                // Monitor connection status from Chat component
+                const checkConnection = () => {
+                    // This will be updated by the Chat component
+                    return connectionStatus.value;
+                };
+
+                return {
+                    connectionStatus: computed(() => {
+                        // Simple connection check - in a real app you'd want more sophisticated monitoring
+                        return 'connected'; // Placeholder - will be updated by WebSocket status
+                    })
+                };
+            }
+        });
+
+        app.use(router);
+        app.use(vuetify);
+        app.mount('#app');
+    </script>
+</body>
+</html>
