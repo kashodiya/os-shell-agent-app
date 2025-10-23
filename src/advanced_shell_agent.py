@@ -10,7 +10,10 @@ import sys
 import time
 from typing import Dict, List, Optional, Any, Union
 
+
 from strands import Agent, tool
+from strands.models import BedrockModel
+
 
 @tool
 def shell_command(command: str) -> Dict[str, Any]:
@@ -115,15 +118,26 @@ class AdvancedShellAgent:
     def __init__(self, model_id: Optional[str] = None, verbose: bool = False):
         """Initialize the Advanced Shell Agent with tools."""
         self.verbose = verbose
-        self.agent = Agent(
-            tools=[
-                shell_command,
-                create_task_plan,
-                read_file,
-                write_file
-            ],
-            model_id=model_id
-        )
+        if model_id:
+            model = BedrockModel(model_id=model_id)
+            self.agent = Agent(
+                tools=[
+                    shell_command,
+                    create_task_plan,
+                    read_file,
+                    write_file
+                ],
+                model=model
+            )
+        else:
+            self.agent = Agent(
+                tools=[
+                    shell_command,
+                    create_task_plan,
+                    read_file,
+                    write_file
+                ]
+            )
     
     def run(self, task: str) -> str:
         """Run the agent with the given task."""

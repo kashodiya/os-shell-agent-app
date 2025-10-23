@@ -7,6 +7,7 @@ import sys
 from typing import Dict, List, Optional, Any, Union
 
 from strands import Agent, tool
+from strands.models import BedrockModel
 
 @tool
 def shell_command(command: str) -> Dict[str, Any]:
@@ -65,10 +66,16 @@ class ShellAgent:
     
     def __init__(self, model_id: Optional[str] = None):
         """Initialize the Shell Agent with tools."""
-        self.agent = Agent(
-            tools=[shell_command, create_plan],
-            model_id=model_id
-        )
+        if model_id:
+            model = BedrockModel(model_id=model_id)
+            self.agent = Agent(
+                tools=[shell_command, create_plan],
+                model=model
+            )
+        else:
+            self.agent = Agent(
+                tools=[shell_command, create_plan]
+            )
     
     def run(self, task: str) -> str:
         """Run the agent with the given task."""
