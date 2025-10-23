@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import argparse
+import sys
 from typing import Dict, Any
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse, FileResponse
@@ -326,13 +328,40 @@ async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "active_connections": len(manager.active_connections)}
 
+def parse_arguments():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(description="OS Shell Agent Web Application")
+    parser.add_argument(
+        "--port", 
+        type=int, 
+        default=51983,  # Default port from runtime info
+        help="Port number to run the server on (default: 51983)"
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="0.0.0.0",
+        help="Host to bind the server to (default: 0.0.0.0)"
+    )
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        default="info",
+        choices=["debug", "info", "warning", "error", "critical"],
+        help="Log level (default: info)"
+    )
+    return parser.parse_args()
+
 if __name__ == "__main__":
-    # Use the port specified in the runtime information
-    port = 52458  # First available port from runtime info
+    # Parse command line arguments
+    args = parse_arguments()
+    
+    logger.info(f"Starting OS Shell Agent Web App on {args.host}:{args.port}")
+    
     uvicorn.run(
         app, 
-        host="0.0.0.0", 
-        port=port,
-        log_level="info",
+        host=args.host, 
+        port=args.port,
+        log_level=args.log_level,
         access_log=True
     )

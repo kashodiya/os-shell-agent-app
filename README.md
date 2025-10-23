@@ -57,7 +57,9 @@ A modern web-based chat interface for interacting with an AI-powered OS Shell Ag
 
 ## 🚀 Running the Application
 
-1. **Start the FastAPI server**:
+### Basic Usage
+
+1. **Start the FastAPI server with default settings**:
    ```bash
    python web_app.py
    ```
@@ -65,10 +67,46 @@ A modern web-based chat interface for interacting with an AI-powered OS Shell Ag
 2. **Access the application**:
    Open your web browser and navigate to:
    ```
-   http://localhost:50598
+   http://localhost:51983
    ```
 
-The server will start on port 50598 by default and serve the single-page application.
+The server will start on port 51983 by default and serve the single-page application.
+
+### Advanced Configuration
+
+The application supports command-line arguments for flexible configuration:
+
+1. **Custom Port**:
+   ```bash
+   python web_app.py --port 8080
+   ```
+
+2. **Custom Host and Port**:
+   ```bash
+   python web_app.py --host 127.0.0.1 --port 9000
+   ```
+
+3. **Debug Logging**:
+   ```bash
+   python web_app.py --log-level debug
+   ```
+
+4. **All Options Combined**:
+   ```bash
+   python web_app.py --port 8080 --host 0.0.0.0 --log-level info
+   ```
+
+5. **View All Available Options**:
+   ```bash
+   python web_app.py --help
+   ```
+
+### Command Line Options
+
+- `--port PORT`: Port number to run the server on (default: 51983)
+- `--host HOST`: Host to bind the server to (default: 0.0.0.0)
+- `--log-level LEVEL`: Log level - debug, info, warning, error, critical (default: info)
+- `--help`: Show help message and exit
 
 ## 📁 Project Structure
 
@@ -147,13 +185,18 @@ The application includes a user-controlled safety mode toggle that allows users 
 
 ### Server Configuration
 
-The FastAPI server can be configured in `web_app.py`:
+The FastAPI server can be configured using command-line arguments:
 
+```bash
+# Default configuration
+python web_app.py
+
+# Custom configuration
+python web_app.py --port 8080 --host 127.0.0.1 --log-level debug
+```
+
+**CORS Configuration** (in `web_app.py`):
 ```python
-# Server settings
-HOST = "0.0.0.0"
-PORT = 50598
-
 # CORS settings
 app.add_middleware(
     CORSMiddleware,
@@ -163,6 +206,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 ```
+
+**Available Command Line Options**:
+- `--port`: Server port (default: 51983)
+- `--host`: Server host (default: 0.0.0.0)
+- `--log-level`: Logging level (default: info)
 
 ### Agent Configuration
 
@@ -277,29 +325,38 @@ The application uses Vue.js reactive data for:
 
 ### Local Development
 ```bash
+# Default configuration
 python web_app.py
+
+# Custom configuration
+python web_app.py --port 8080 --host 127.0.0.1 --log-level debug
 ```
 
 ### Production Deployment
 
 For production, consider using:
 
-1. **Gunicorn with Uvicorn workers**:
+1. **Direct Python with custom configuration**:
    ```bash
-   gunicorn web_app:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:50598
+   python web_app.py --port 80 --host 0.0.0.0 --log-level warning
    ```
 
-2. **Docker** (create Dockerfile):
+2. **Gunicorn with Uvicorn workers**:
+   ```bash
+   gunicorn web_app:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:51983
+   ```
+
+3. **Docker** (create Dockerfile):
    ```dockerfile
    FROM python:3.9
    COPY . /app
    WORKDIR /app
    RUN pip install -r requirements.txt
-   EXPOSE 50598
-   CMD ["python", "web_app.py"]
+   EXPOSE 51983
+   CMD ["python", "web_app.py", "--port", "51983", "--host", "0.0.0.0"]
    ```
 
-3. **Reverse Proxy**: Use Nginx or Apache for production serving
+4. **Reverse Proxy**: Use Nginx or Apache for production serving
 
 ## 🤝 Contributing
 
@@ -321,8 +378,11 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 1. **Port Already in Use**:
    ```bash
-   # Find and kill process using port 50598
-   lsof -ti:50598 | xargs kill -9
+   # Find and kill process using port 51983 (default port)
+   lsof -ti:51983 | xargs kill -9
+   
+   # Or use a different port
+   python web_app.py --port 8080
    ```
 
 2. **WebSocket Connection Failed**:
@@ -362,6 +422,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - **v1.2.0**: Improved UI with expandable command output
 - **v1.3.0**: Enhanced safety features and error handling
 - **v1.4.0**: Added risky mode toggle with user-controlled safety settings
+- **v1.5.0**: Added command-line argument support for port, host, and log level configuration
 
 ## 👥 Authors
 
