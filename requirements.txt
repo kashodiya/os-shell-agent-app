@@ -1,0 +1,3 @@
+trands-agents
+click
+boto3
