@@ -122,7 +122,14 @@ When users ask about previous conversations or "what was my first question", use
     def _store_interaction_memory(self, interaction_type: str, input_data: str, output_data: str, success: bool = True):
         """Store interaction in persistent memory."""
         try:
-            memory_content = f"Interaction: {interaction_type} - Input: {input_data[:200]} - Output: {output_data[:200]} - Success: {success} - Time: {datetime.now().isoformat()}"
+            # Store a more detailed and searchable memory entry
+            if interaction_type == "command_execution":
+                memory_content = f"Executed command '{input_data}' with output: {output_data[:300]}"
+            elif interaction_type == "question_answer":
+                memory_content = f"Question: {input_data} | Answer: {output_data[:300]}"
+            else:
+                memory_content = f"{interaction_type}: {input_data} -> {output_data[:300]}"
+            
             self.tool.mem0_memory(action="store", content=memory_content, user_id=self.user_id)
         except Exception as e:
             print(f"Warning: Could not store interaction to memory: {e}")
@@ -231,7 +238,7 @@ When users ask about previous conversations or "what was my first question", use
             
             # Save to memory
             output_summary = result.stdout[:200] if result.stdout else result.stderr[:200]
-            self._store_interaction_memory('command', command, output_summary, result.returncode == 0)
+            self._store_interaction_memory('command_execution', command, output_summary, result.returncode == 0)
             
             return {
                 "command": command,
@@ -284,12 +291,56 @@ Examples for Unix/Linux:
 - "How much disk space is available?" -> "df -h"
 - "What's in this file?" -> "cat filename"""
         
-        # Retrieve relevant memories for context
+        # First, check if we can answer from memory without executing commands
         try:
-            result = self.tool.mem0_memory(action="retrieve", query=question, user_id=self.user_id, limit=3)
-            context = ""
+            result = self.tool.mem0_memory(action="retrieve", query=question, user_id=self.user_id, limit=5)
             memories = self._parse_memory_result(result)
+            
+            if memories and len(memories) > 0:
+                # Check if the question can be answered directly from memory
+                memory_context = "Previous interactions and information:\n"
+                for memory in memories:
+                    memory_context += f"- {memory.get('memory', '')}\n"
+                
+                # Try to answer from memory first
+                memory_prompt = f"""Based on the following previous interactions, can you directly answer this question without needing to execute any new commands?
 
+{memory_context}
+
+Question: {question}
+
+If you can answer the question directly from the above information, provide the answer. 
+If you cannot answer from the available information, respond with "NEED_COMMAND" and I will execute a command to get the information.
+
+Answer:"""
+                
+                print("🧠 Checking if question can be answered from memory...")
+                memory_response = self.bedrock.invoke_model(
+                    modelId="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+                    body=json.dumps({
+                        "anthropic_version": "bedrock-2023-05-31",
+                        "max_tokens": 300,
+                        "messages": [{"role": "user", "content": memory_prompt}]
+                    })
+                )
+                
+                memory_answer = json.loads(memory_response['body'].read())['content'][0]['text'].strip()
+                
+                if not memory_answer.startswith("NEED_COMMAND"):
+                    print("✅ Answered from memory!")
+                    # Store this Q&A interaction in memory
+                    self._store_interaction_memory("question_answer", question, memory_answer, True)
+                    return {
+                        "answer": memory_answer,
+                        "command_used": "Retrieved from memory",
+                        "success": True,
+                        "from_memory": True
+                    }
+                else:
+                    print("🔍 Memory insufficient, will execute command...")
+            
+            # Prepare context for command generation
+            context = ""
             if memories and len(memories) > 0:
                 context = "Previous relevant context:\n"
                 for memory in memories:
