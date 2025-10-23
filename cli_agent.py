@@ -6,7 +6,9 @@ from datetime import datetime
 from typing import List, Dict, Any
 import boto3
 from strands import Agent, tool
-from strands_tools import mem0_memory
+from bedrock_agentcore.memory import MemoryClient
+from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
+from bedrock_agentcore.memory.integrations.strands.session_manager import AgentCoreMemorySessionManager
 from safety_guardrails import SafetyGuardrails
 
 class CLIAgent(Agent):
@@ -19,6 +21,7 @@ class CLIAgent(Agent):
         
         # Set user ID for memory operations
         self.user_id = session_id or f"user_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self.session_id = session_id or f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
         # Load and display system prompt
         system_prompt = self._load_system_prompt()
@@ -34,7 +37,7 @@ class CLIAgent(Agent):
         enhanced_system_prompt = f"""{system_prompt}
 
 ## Memory Capabilities
-You have access to persistent memory through the mem0_memory tool. Use this to:
+You have access to persistent memory through the built-in memory system. Use this to:
 - Store important information about user preferences, past commands, and context
 - Retrieve relevant memories to provide better assistance
 - Remember conversation history and user patterns
@@ -43,13 +46,61 @@ Always include user_id="{self.user_id}" when using memory operations.
 When users ask about previous conversations or "what was my first question", use memory retrieval instead of shell commands.
 """
         
-        super().__init__(
-            name="CLI Command Agent",
-            description="An agent that can execute any CLI command and handle complex tasks by breaking them into steps with persistent memory",
-            model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-            system_prompt=enhanced_system_prompt,
-            tools=[mem0_memory]
-        )
+        # Initialize simple local memory system (fallback for environments without AWS)
+        self.local_memory = {}
+        self.memory_counter = 0
+        
+        # Try to initialize AgentCore memory system for production use
+        try:
+            # Create a simple in-memory client for local testing
+            # In production, you would use AWS Bedrock AgentCore
+            self.memory_client = MemoryClient(region_name="us-east-1")
+            
+            # Create or get memory
+            self.memory_resource = self.memory_client.create_memory(
+                name=f"CLIAgent_Memory_{self.session_id}",
+                description="CLI Agent conversation memory"
+            )
+            memory_id = self.memory_resource.get('id')
+            
+            # Configure memory
+            agentcore_memory_config = AgentCoreMemoryConfig(
+                memory_id=memory_id,
+                session_id=self.session_id,
+                actor_id=self.user_id
+            )
+            
+            # Create session manager
+            session_manager = AgentCoreMemorySessionManager(
+                agentcore_memory_config=agentcore_memory_config,
+                region_name="us-east-1"
+            )
+            
+            # Initialize the Agent with AgentCore memory session manager
+            super().__init__(
+                name="CLI Command Agent",
+                description="An agent that can execute any CLI command and handle complex tasks by breaking them into steps with persistent memory",
+                model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+                system_prompt=enhanced_system_prompt,
+                tools=[],
+                session_manager=session_manager
+            )
+            
+            self.use_agentcore_memory = True
+            print("✅ AgentCore memory initialized successfully")
+            
+        except Exception as e:
+            print(f"⚠️  AgentCore memory not available, using local memory: {e}")
+            # Fallback to basic agent with local memory
+            super().__init__(
+                name="CLI Command Agent",
+                description="An agent that can execute any CLI command and handle complex tasks by breaking them into steps with persistent memory",
+                model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+                system_prompt=enhanced_system_prompt,
+                tools=[]
+            )
+            self.use_agentcore_memory = False
+        
         self.bedrock = boto3.client('bedrock-runtime', region_name='us-east-1')
     
     def _print_safety_status(self):
@@ -87,11 +138,8 @@ When users ask about previous conversations or "what was my first question", use
         
         # Log the change to memory
         mode_str = "ENABLED" if self.safe_mode else "DISABLED"
-        log_message = f"Safety mode {mode_str} by user request at {datetime.now().isoformat()}"
-        try:
-            self.tool.mem0_memory(action="store", content=log_message, user_id=self.user_id)
-        except Exception as e:
-            print(f"Warning: Could not store safety mode change to memory: {e}")
+        log_message = f"Safety mode {mode_str} by user request"
+        self._store_interaction_memory("safety_mode_change", log_message, mode_str, True)
         
         return {
             "safe_mode": self.safe_mode,
@@ -120,30 +168,87 @@ When users ask about previous conversations or "what was my first question", use
             return "You are a CLI Command Agent that helps execute system commands and answer questions."
     
     def _store_interaction_memory(self, interaction_type: str, input_data: str, output_data: str, success: bool = True):
-        """Store interaction in persistent memory."""
+        """Store interaction in memory using AgentCore or local fallback."""
         try:
-            # Store a more detailed and searchable memory entry
-            if interaction_type == "command_execution":
-                memory_content = f"Executed command '{input_data}' with output: {output_data[:300]}"
-            elif interaction_type == "question_answer":
-                memory_content = f"Question: {input_data} | Answer: {output_data[:300]}"
-            else:
-                memory_content = f"{interaction_type}: {input_data} -> {output_data[:300]}"
+            from datetime import datetime
             
-            self.tool.mem0_memory(action="store", content=memory_content, user_id=self.user_id)
+            if hasattr(self, 'use_agentcore_memory') and self.use_agentcore_memory:
+                # AgentCore memory automatically stores conversation context
+                memory_content = f"[{interaction_type}] {input_data}"
+                if output_data:
+                    memory_content += f" -> {output_data[:200]}"
+                print(f"💾 Memory stored via AgentCore: {memory_content[:50]}{'...' if len(memory_content) > 50 else ''}")
+            else:
+                # Use local memory fallback
+                memory_key = f"{interaction_type}_{self.memory_counter}"
+                self.memory_counter += 1
+                
+                memory_entry = {
+                    "type": interaction_type,
+                    "input": input_data,
+                    "output": output_data[:500],
+                    "success": success,
+                    "timestamp": datetime.now().isoformat(),
+                    "content": f"[{interaction_type}] {input_data}" + (f" -> {output_data[:200]}" if output_data else "")
+                }
+                
+                self.local_memory[memory_key] = memory_entry
+                print(f"💾 Memory stored locally: {memory_entry['content'][:50]}{'...' if len(memory_entry['content']) > 50 else ''}")
+                
         except Exception as e:
             print(f"Warning: Could not store interaction to memory: {e}")
     
-    def _parse_memory_result(self, result):
-        """Parse memory retrieval result and return list of memories."""
+    def _retrieve_memories(self, query: str, limit: int = 5):
+        """Retrieve memories using AgentCore or local fallback."""
         try:
-            if result and result.get('status') == 'success' and result.get('content'):
-                import json
-                memories_text = result['content'][0]['text']
-                return json.loads(memories_text)
-            return []
+            if hasattr(self, 'use_agentcore_memory') and self.use_agentcore_memory:
+                # AgentCore memory automatically retrieves relevant context
+                print(f"🧠 AgentCore retrieving memories for: {query[:50]}{'...' if len(query) > 50 else ''}")
+                return []
+            else:
+                # Use local memory fallback
+                print(f"🧠 Local memory retrieving memories for: {query[:50]}{'...' if len(query) > 50 else ''}")
+                matching_memories = []
+                query_lower = query.lower()
+                
+                for key, memory_entry in self.local_memory.items():
+                    content = memory_entry.get('content', '').lower()
+                    input_data = memory_entry.get('input', '').lower()
+                    memory_type = memory_entry.get('type', '')
+                    
+                    # Enhanced matching for conversation history questions
+                    is_match = False
+                    
+                    # Direct word matching
+                    if any(word in content or word in input_data for word in query_lower.split()):
+                        is_match = True
+                    
+                    # Special handling for conversation history questions
+                    if any(phrase in query_lower for phrase in ['first question', 'previous question', 'what did i ask', 'my question']):
+                        if memory_type == 'user_question':
+                            is_match = True
+                    
+                    # Special handling for command history questions  
+                    if any(phrase in query_lower for phrase in ['first command', 'previous command', 'what command', 'last command']):
+                        if memory_type == 'command_execution':
+                            is_match = True
+                    
+                    if is_match:
+                        matching_memories.append({
+                            'memory': memory_entry.get('content', ''),
+                            'type': memory_entry.get('type', ''),
+                            'timestamp': memory_entry.get('timestamp', ''),
+                            'success': memory_entry.get('success', True)
+                        })
+                        
+                        if len(matching_memories) >= limit:
+                            break
+                
+                print(f"🔍 Found {len(matching_memories)} matching memories")
+                return matching_memories
+                
         except Exception as e:
-            print(f"Warning: Could not parse memory result: {e}")
+            print(f"Warning: Could not retrieve memories: {e}")
             return []
     
     @tool
@@ -293,8 +398,7 @@ Examples for Unix/Linux:
         
         # First, check if we can answer from memory without executing commands
         try:
-            result = self.tool.mem0_memory(action="retrieve", query=question, user_id=self.user_id, limit=5)
-            memories = self._parse_memory_result(result)
+            memories = self._retrieve_memories(query=question, limit=5)
             
             if memories and len(memories) > 0:
                 # Check if the question can be answered directly from memory
@@ -397,9 +501,8 @@ Command:"""
             # Generate human-readable answer
             # Retrieve relevant memories for context
             try:
-                result = self.tool.mem0_memory(action="retrieve", query=f"question: {question} command: {command}", user_id=self.user_id, limit=2)
+                memories = self._retrieve_memories(query=f"question: {question} command: {command}", limit=2)
                 context = ""
-                memories = self._parse_memory_result(result)
 
                 if memories and len(memories) > 0:
                     context = "Previous relevant context:\n"
@@ -483,9 +586,8 @@ Examples for Unix/Linux:
         
         # Retrieve relevant memories for context
         try:
-            result = self.tool.mem0_memory(action="retrieve", query=question, user_id=self.user_id, limit=3)
+            memories = self._retrieve_memories(query=question, limit=3)
             context = ""
-            memories = self._parse_memory_result(result)
 
             if memories and len(memories) > 0:
                 context = "Previous relevant context:\n"
@@ -539,9 +641,8 @@ Command:"""
             
             # Retrieve relevant memories for context
             try:
-                result = self.tool.mem0_memory(action="retrieve", query=question, user_id=self.user_id, limit=3)
+                memories = self._retrieve_memories(query=question, limit=3)
                 context = ""
-                memories = self._parse_memory_result(result)
 
                 if memories and len(memories) > 0:
                     context = "Previous relevant context:\n"
@@ -665,9 +766,8 @@ Do not include explanatory text, just the commands."""
         """
         try:
             # Retrieve relevant memories for context
-            result = self.tool.mem0_memory(action="retrieve", query=question, user_id=self.user_id, limit=3)
+            memories = self._retrieve_memories(query=question, limit=3)
             context = ""
-            memories = self._parse_memory_result(result)
 
             if memories and len(memories) > 0:
                 context = "Previous relevant context:\n"

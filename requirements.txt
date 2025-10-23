@@ -1,6 +1,5 @@
 strands-agents
-strands-agents-tools[mem0_memory]
-faiss-cpu
+bedrock-agentcore[strands-agents]
 click
 boto3
 fastapi
