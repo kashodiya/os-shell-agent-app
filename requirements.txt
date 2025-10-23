@@ -1,6 +1,9 @@
 strands-agents
+strands-agents-tools[mem0_memory]
+faiss-cpu
 click
 boto3
 fastapi
 uvicorn
 websockets
+python-dotenv

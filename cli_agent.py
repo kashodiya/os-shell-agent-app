@@ -2,11 +2,11 @@ import subprocess
 import json
 import platform
 import os
-import pickle
 from datetime import datetime
 from typing import List, Dict, Any
 import boto3
 from strands import Agent, tool
+from strands_tools import mem0_memory
 from safety_guardrails import SafetyGuardrails
 
 class CLIAgent(Agent):
@@ -16,6 +16,9 @@ class CLIAgent(Agent):
         # Initialize safety guardrails
         self.safety = SafetyGuardrails(safe_mode=safe_mode)
         self.safe_mode = safe_mode
+        
+        # Set user ID for memory operations
+        self.user_id = session_id or f"user_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
         # Load and display system prompt
         system_prompt = self._load_system_prompt()
@@ -27,16 +30,27 @@ class CLIAgent(Agent):
         self._print_safety_status()
         print("=" * 50)
         
+        # Enhanced system prompt with memory capabilities
+        enhanced_system_prompt = f"""{system_prompt}
+
+## Memory Capabilities
+You have access to persistent memory through the mem0_memory tool. Use this to:
+- Store important information about user preferences, past commands, and context
+- Retrieve relevant memories to provide better assistance
+- Remember conversation history and user patterns
+
+Always include user_id="{self.user_id}" when using memory operations.
+When users ask about previous conversations or "what was my first question", use memory retrieval instead of shell commands.
+"""
+        
         super().__init__(
             name="CLI Command Agent",
-            description="An agent that can execute any CLI command and handle complex tasks by breaking them into steps",
+            description="An agent that can execute any CLI command and handle complex tasks by breaking them into steps with persistent memory",
             model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-            system_prompt=system_prompt
+            system_prompt=enhanced_system_prompt,
+            tools=[mem0_memory]
         )
         self.bedrock = boto3.client('bedrock-runtime', region_name='us-east-1')
-        self.session_id = session_id or f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        self.memory_file = f".cli_memory_{self.session_id}.pkl"
-        self.conversation_history = self._load_memory()
     
     def _print_safety_status(self):
         """Print current safety mode status."""
@@ -71,10 +85,13 @@ class CLIAgent(Agent):
         self._print_safety_status()
         print("=" * 50)
         
-        # Log the change
+        # Log the change to memory
         mode_str = "ENABLED" if self.safe_mode else "DISABLED"
-        log_message = f"Safety mode {mode_str} by user request"
-        self._add_to_memory('safety_toggle', f"safe_mode={self.safe_mode}", log_message, True)
+        log_message = f"Safety mode {mode_str} by user request at {datetime.now().isoformat()}"
+        try:
+            self.tool.mem0_memory(action="store", content=log_message, user_id=self.user_id)
+        except Exception as e:
+            print(f"Warning: Could not store safety mode change to memory: {e}")
         
         return {
             "safe_mode": self.safe_mode,
@@ -102,51 +119,25 @@ class CLIAgent(Agent):
         except FileNotFoundError:
             return "You are a CLI Command Agent that helps execute system commands and answer questions."
     
-    def _load_memory(self) -> List[Dict[str, Any]]:
-        """Load conversation history from file."""
-        if os.path.exists(self.memory_file):
-            try:
-                with open(self.memory_file, 'rb') as f:
-                    return pickle.load(f)
-            except:
-                pass
-        return []
-    
-    def _save_memory(self):
-        """Save conversation history to file."""
+    def _store_interaction_memory(self, interaction_type: str, input_data: str, output_data: str, success: bool = True):
+        """Store interaction in persistent memory."""
         try:
-            with open(self.memory_file, 'wb') as f:
-                pickle.dump(self.conversation_history, f)
-        except:
-            pass
+            memory_content = f"Interaction: {interaction_type} - Input: {input_data[:200]} - Output: {output_data[:200]} - Success: {success} - Time: {datetime.now().isoformat()}"
+            self.tool.mem0_memory(action="store", content=memory_content, user_id=self.user_id)
+        except Exception as e:
+            print(f"Warning: Could not store interaction to memory: {e}")
     
-    def _add_to_memory(self, interaction_type: str, input_data: str, output_data: str, success: bool = True):
-        """Add interaction to conversation memory."""
-        self.conversation_history.append({
-            'timestamp': datetime.now().isoformat(),
-            'type': interaction_type,
-            'input': input_data,
-            'output': output_data,
-            'success': success
-        })
-        # Keep only last 20 interactions
-        if len(self.conversation_history) > 20:
-            self.conversation_history = self.conversation_history[-20:]
-        self._save_memory()
-    
-    def _get_context_prompt(self) -> str:
-        """Generate context from recent conversation history."""
-        if not self.conversation_history:
-            return ""
-        
-        context_lines = ["Previous conversation context:"]
-        for item in self.conversation_history[-5:]:  # Last 5 interactions
-            context_lines.append(f"- {item['type']}: {item['input'][:100]} -> {item['output'][:100]}")
-        
-        return "\n".join(context_lines) + "\n\n"
-        self.session_id = session_id or f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        self.memory_file = f".cli_memory_{self.session_id}.pkl"
-        self.conversation_history = self._load_memory()
+    def _parse_memory_result(self, result):
+        """Parse memory retrieval result and return list of memories."""
+        try:
+            if result and result.get('status') == 'success' and result.get('content'):
+                import json
+                memories_text = result['content'][0]['text']
+                return json.loads(memories_text)
+            return []
+        except Exception as e:
+            print(f"Warning: Could not parse memory result: {e}")
+            return []
     
     @tool
     def execute_command(self, command: str, working_directory: str = None, force: bool = False) -> Dict[str, Any]:
@@ -189,7 +180,7 @@ class CLIAgent(Agent):
                     for alt in alternatives:
                         print(f"  - {alt}")
                 
-                self._add_to_memory('command', command, error_msg, False)
+                self._store_interaction_memory('command', command, error_msg, False)
                 return {
                     "command": command,
                     "stdout": "",
@@ -210,7 +201,7 @@ class CLIAgent(Agent):
                     print(f"💾 Backup recommendation: {backup_rec}")
                 
                 print("⚠️  Command execution paused. Use force=True to override or modify the command.")
-                self._add_to_memory('command', command, "Execution paused - confirmation required", False)
+                self._store_interaction_memory('command', command, "Execution paused - confirmation required", False)
                 return {
                     "command": command,
                     "stdout": "",
@@ -240,7 +231,7 @@ class CLIAgent(Agent):
             
             # Save to memory
             output_summary = result.stdout[:200] if result.stdout else result.stderr[:200]
-            self._add_to_memory('command', command, output_summary, result.returncode == 0)
+            self._store_interaction_memory('command', command, output_summary, result.returncode == 0)
             
             return {
                 "command": command,
@@ -251,7 +242,7 @@ class CLIAgent(Agent):
             }
         except Exception as e:
             print(f"❌ Exception during execution: {str(e)}")
-            self._add_to_memory('command', command, str(e), False)
+            self._store_interaction_memory('command', command, str(e), False)
             return {
                 "command": command,
                 "stdout": "",
@@ -293,7 +284,21 @@ Examples for Unix/Linux:
 - "How much disk space is available?" -> "df -h"
 - "What's in this file?" -> "cat filename"""
         
-        context = self._get_context_prompt()
+        # Retrieve relevant memories for context
+        try:
+            result = self.tool.mem0_memory(action="retrieve", query=question, user_id=self.user_id, limit=3)
+            context = ""
+            memories = self._parse_memory_result(result)
+
+            if memories and len(memories) > 0:
+                context = "Previous relevant context:\n"
+                for memory in memories:
+                    context += f"- {memory.get('memory', '')}\n"
+                context += "\n"
+        except Exception as e:
+            print(f"Warning: Could not retrieve memories: {e}")
+            context = ""
+        
         prompt = f"""{context}Convert this English question to the most appropriate CLI command for {platform.system()}:
 
 Question: {question}
@@ -339,7 +344,21 @@ Command:"""
             print(f"🧠 Interpreting results...")
             
             # Generate human-readable answer
-            context = self._get_context_prompt()
+            # Retrieve relevant memories for context
+            try:
+                result = self.tool.mem0_memory(action="retrieve", query=f"question: {question} command: {command}", user_id=self.user_id, limit=2)
+                context = ""
+                memories = self._parse_memory_result(result)
+
+                if memories and len(memories) > 0:
+                    context = "Previous relevant context:\n"
+                    for memory in memories:
+                        context += f"- {memory.get('memory', '')}\n"
+                    context += "\n"
+            except Exception as e:
+                print(f"Warning: Could not retrieve memories for answer generation: {e}")
+                context = ""
+            
             answer_prompt = f"""{context}Based on this command output, provide a clear English answer to the original question.
 
 Original Question: {question}
@@ -364,7 +383,7 @@ Provide a concise, helpful answer in plain English:"""
             print(f"📝 Generated answer: {answer[:100]}{'...' if len(answer) > 100 else ''}")
             
             # Save to memory
-            self._add_to_memory('question', question, answer, exec_result['success'])
+            self._store_interaction_memory('question', question, answer, exec_result['success'])
             
             return {
                 "question": question,
@@ -376,7 +395,7 @@ Provide a concise, helpful answer in plain English:"""
             
         except Exception as e:
             error_msg = f"Sorry, I couldn't process your question: {str(e)}"
-            self._add_to_memory('question', question, error_msg, False)
+            self._store_interaction_memory('question', question, error_msg, False)
             return {
                 "question": question,
                 "command_used": "unknown",
@@ -408,7 +427,20 @@ Examples for Unix/Linux:
 - "How much disk space is available?" -> "df -h"
 - "What's in this file?" -> "cat filename"""
         
-        context = self._get_context_prompt()
+        # Retrieve relevant memories for context
+        try:
+            result = self.tool.mem0_memory(action="retrieve", query=question, user_id=self.user_id, limit=3)
+            context = ""
+            memories = self._parse_memory_result(result)
+
+            if memories and len(memories) > 0:
+                context = "Previous relevant context:\n"
+                for memory in memories:
+                    context += f"- {memory.get('memory', '')}\n"
+                context += "\n"
+        except Exception as e:
+            print(f"Warning: Could not retrieve memories: {e}")
+            context = ""
         prompt = f"""{context}Convert this English question to the most appropriate CLI command for {platform.system()}:
 
 Question: {question}
@@ -451,7 +483,20 @@ Command:"""
             
             print(f"🧠 Interpreting results...")
             
-            context = self._get_context_prompt()
+            # Retrieve relevant memories for context
+            try:
+                result = self.tool.mem0_memory(action="retrieve", query=question, user_id=self.user_id, limit=3)
+                context = ""
+                memories = self._parse_memory_result(result)
+
+                if memories and len(memories) > 0:
+                    context = "Previous relevant context:\n"
+                    for memory in memories:
+                        context += f"- {memory.get('memory', '')}\n"
+                    context += "\n"
+            except Exception as e:
+                print(f"Warning: Could not retrieve memories: {e}")
+                context = ""
             answer_prompt = f"""{context}Based on this command output, provide a clear English answer to the original question.
 
 Original Question: {question}
@@ -475,7 +520,7 @@ Provide a concise, helpful answer in plain English:"""
             
             print(f"📝 Generated answer: {answer[:100]}{'...' if len(answer) > 100 else ''}")
             
-            self._add_to_memory('question', question, answer, exec_result['success'])
+            self._store_interaction_memory('question', question, answer, exec_result['success'])
             
             return {
                 "question": question,
@@ -487,7 +532,7 @@ Provide a concise, helpful answer in plain English:"""
             
         except Exception as e:
             error_msg = f"Sorry, I couldn't process your question: {str(e)}"
-            self._add_to_memory('question', question, error_msg, False)
+            self._store_interaction_memory('question', question, error_msg, False)
             return {
                 "question": question,
                 "command_used": "unknown",
@@ -562,7 +607,19 @@ Do not include explanatory text, just the commands."""
             Human-readable summary of the command output
         """
         try:
-            context = self._get_context_prompt()
+            # Retrieve relevant memories for context
+            result = self.tool.mem0_memory(action="retrieve", query=question, user_id=self.user_id, limit=3)
+            context = ""
+            memories = self._parse_memory_result(result)
+
+            if memories and len(memories) > 0:
+                context = "Previous relevant context:\n"
+                for memory in memories:
+                    context += f"- {memory.get('memory', '')}\n"
+                context += "\n"
+        except Exception as e:
+            print(f"Warning: Could not retrieve memories: {e}")
+            context = ""
             prompt = f"""{context}Summarize this command output in a clear, concise way for the user.
 
 Command: {command}
